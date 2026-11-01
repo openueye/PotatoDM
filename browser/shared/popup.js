@@ -1,5 +1,9 @@
 "use strict";
 
+// settings.js is loaded by popup.html before this file. It is a classic script, so
+// the namespace is the only way to share the threshold resolver with the worker.
+const { resolveMinSizeMb } = globalThis.PotatoDMSettings;
+
 const isFirefox =
   typeof browser !== "undefined" &&
   browser.runtime &&
@@ -151,7 +155,7 @@ siteToggle.addEventListener("change", async () => {
 });
 
 minSize.addEventListener("change", () => {
-  callStorage(api.storage.local, "set", { minSizeMb: Number(minSize.value) || 0 }).catch(() => {});
+  callStorage(api.storage.local, "set", { minSizeMb: resolveMinSizeMb(minSize.value) }).catch(() => {});
 });
 
 function renderResources(items) {
@@ -269,7 +273,7 @@ async function init() {
     ]);
     renderEnabled(!values || values.enabled !== false);
     renderLast(values ? values.lastResult : null);
-    minSize.value = String((values && values.minSizeMb) || 2);
+    minSize.value = String(resolveMinSizeMb(values && values.minSizeMb));
     const tabs = await call(api.tabs.query, { active: true, currentWindow: true });
     activeTab = tabs && tabs[0];
     if (activeTab && activeTab.url) {

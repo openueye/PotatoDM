@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PotatoDM.AppCore.Models;
+using PotatoDM.Core.Diagnostics;
 
 namespace PotatoDM.AppCore.Services;
 
@@ -14,10 +15,19 @@ public sealed class SettingsStore
     };
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ILogSink _log;
 
-    public SettingsStore(string? filePath = null)
+    /// <param name="filePath">Overrides the default settings path; used by tests.</param>
+    /// <param name="log">
+    /// Optional sink. A damaged settings file means every preference the user set
+    /// is silently back to its default, which looks like the app "forgetting"
+    /// things for no reason. Logged at Warning with the path so the file can be
+    /// inspected before the next save overwrites it.
+    /// </param>
+    public SettingsStore(string? filePath = null, ILogSink? log = null)
     {
         FilePath = filePath ?? AppPaths.SettingsFile;
+        _log = log ?? NullLogSink.Instance;
     }
 
     public string FilePath { get; }
@@ -40,12 +50,22 @@ public sealed class SettingsStore
 
             return settings;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            _log.Warning(
+                $"Settings file '{FilePath}' is not valid JSON; every preference falls back " +
+                "to its default and the next save will overwrite the file.",
+                ex);
+
             return new AppSettings();
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            _log.Warning(
+                $"Settings file '{FilePath}' could not be read; every preference falls back " +
+                "to its default for this session.",
+                ex);
+
             return new AppSettings();
         }
         finally

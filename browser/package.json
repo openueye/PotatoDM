@@ -1,0 +1,10 @@
+{
+  "name": "potatodm-browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PotatoDM browser hand-off extension (Chromium MV3).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}

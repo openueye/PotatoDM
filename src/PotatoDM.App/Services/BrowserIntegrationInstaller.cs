@@ -137,27 +137,9 @@ public sealed class BrowserIntegrationInstaller
 
 	private void EnsureSources()
 	{
-		if (!File.Exists(HostExePath))
-		{
-			throw new FileNotFoundException("缺少浏览器宿主程序：" + HostExePath, HostExePath);
-		}
-		string[] array = new string[6]
-		{
-			Path.Combine("shared", "background.js"),
-			Path.Combine("shared", "content.js"),
-			Path.Combine("shared", "content-main.js"),
-			Path.Combine("shared", "popup.html"),
-			Path.Combine("shared", "popup.js"),
-			Path.Combine("chromium", "manifest.json")
-		};
-		foreach (string path in array)
-		{
-			string text = Path.Combine(SourceRoot, path);
-			if (!File.Exists(text))
-			{
-				throw new FileNotFoundException("缺少扩展文件：" + text, text);
-			}
-		}
+		// The file list lives in AppCore so that a net8.0 test can assert an incomplete
+		// payload is rejected; this WPF project is not reachable from the test projects.
+		BrowserExtensionLayout.EnsureSources(SourceRoot, HostExePath);
 	}
 
 	private static string ReadChromeId(string manifestPath)

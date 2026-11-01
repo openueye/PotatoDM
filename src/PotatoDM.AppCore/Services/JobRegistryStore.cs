@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PotatoDM.AppCore.Models;
+using PotatoDM.Core.Diagnostics;
 
 namespace PotatoDM.AppCore.Services;
 
@@ -14,10 +15,18 @@ public sealed class JobRegistryStore
     };
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ILogSink _log;
 
-    public JobRegistryStore(string? filePath = null)
+    /// <param name="filePath">Overrides the default registry path; used by tests.</param>
+    /// <param name="log">
+    /// Optional sink. A damaged registry used to mean the task list came back empty
+    /// with no explanation, and the next save overwrote the damaged file so nothing
+    /// could be recovered afterwards. Logged at Warning with the path.
+    /// </param>
+    public JobRegistryStore(string? filePath = null, ILogSink? log = null)
     {
         FilePath = filePath ?? AppPaths.JobsFile;
+        _log = log ?? NullLogSink.Instance;
     }
 
     public string FilePath { get; }
@@ -34,17 +43,36 @@ public sealed class JobRegistryStore
             }
 
             var json = await File.ReadAllTextAsync(FilePath, cancellationToken).ConfigureAwait(false);
+            var records = JsonSerializer.Deserialize<List<JobRecord>>(json, JsonOptions);
 
-            return JsonSerializer.Deserialize<List<JobRecord>>(json, JsonOptions)
-                   ?? new List<JobRecord>();
+            if (records is null)
+            {
+                _log.Warning(
+                    $"Job registry '{FilePath}' contains no list; the task list starts empty " +
+                    "and the next save will overwrite the file.");
+
+                return new List<JobRecord>();
+            }
+
+            return records;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
             // A damaged registry must not prevent the app from starting.
+            _log.Warning(
+                $"Job registry '{FilePath}' is not valid JSON; the task list starts empty and " +
+                "the next save will overwrite the file.",
+                ex);
+
             return new List<JobRecord>();
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            _log.Warning(
+                $"Job registry '{FilePath}' could not be read; the task list starts empty for " +
+                "this session.",
+                ex);
+
             return new List<JobRecord>();
         }
         finally

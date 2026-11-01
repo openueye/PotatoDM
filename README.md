@@ -75,8 +75,9 @@ src/
   PotatoDM.BrowserIpc/             # 浏览器协议契约、原生消息帧、命名管道（零依赖）
   PotatoDM.BrowserHost/            # Native Messaging 宿主（stdio ↔ 命名管道）
 browser/
-  shared/                          # background.js 与 popup（Chrome / Edge 共用）
+  shared/                          # 扩展根目录：background.js、popup 与共用模块（Chrome / Edge 共用）
   chromium/                        # manifest（构建时复制到客户端输出）
+  test/                            # 扩展纯逻辑测试（node:test，零依赖）
 tests/
   Shared/                          # 测试项目共享的辅助类型（TempDirectory）
   PotatoDM.TestServer/             # 故障注入服务器（ASP.NET Core Minimal API）
@@ -109,6 +110,24 @@ WPF 客户端仅支持 Windows，直接运行：
 ```powershell
 dotnet run --project src/PotatoDM.App
 ```
+
+浏览器扩展的纯逻辑另有一套零依赖测试（Node 内置 `node:test`，不安装任何包）：
+
+```powershell
+cd browser
+npm test
+```
+
+它覆盖 `shared/settings.js` 的阈值解析、`shared/resources.js` 的资源去重/排序/分类/命名，
+以及 `shared/protocol.js` 的接管判定与超时链关系；`test/background-wiring.test.js` 会在
+一个带 `chrome` stub 的沙箱里真实执行 `background.js`，验证 `importScripts` 接线并回归
+「阈值设为 0 后重启又回来」这个缺陷。扩展本身仍无需构建步骤，`shared/` 里的文件原样打包。
+
+扩展是 Chromium 直接加载的目录：少一个文件不会抛异常，只会让 service worker 在
+`importScripts()` 处静默启动失败，用户看到的是「下载器没反应」。所以安装前由
+`BrowserExtensionLayout.RequiredSourceFiles` 逐项校验，**往 `shared/` 加脚本或往 manifest
+加引用资源时必须同步加进这个清单**；`BrowserExtensionLayoutTests` 会拿 `browser/shared/`
+和 `manifest.json` 的实际内容对照清单，漏了直接红。
 
 单独重跑进程级恢复测试：
 

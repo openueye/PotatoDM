@@ -17,3 +17,6 @@ TestResults/
 !tests/**/*.torrent
 /.workbuddy/
 publish/
+# The extension's tests run on node:test with zero dependencies, so nothing should
+# ever be installed under browser/.
+browser/node_modules/

@@ -14,7 +14,9 @@ public partial class App : System.Windows.Application
 {
     private const string MutexName = @"Local\PotatoDM.SingleInstance.v1";
 
-    private readonly SettingsStore _settingsStore = new();
+    // Replaced in OnStartup once the log sink exists: a damaged settings.json must
+    // not be reported to a sink that does not exist yet.
+    private SettingsStore _settingsStore = new();
     private Mutex? _singleInstance;
     private BrowserPipeServer? _pipeServer;
     private DownloadManager? _manager;
@@ -50,11 +52,13 @@ public partial class App : System.Windows.Application
             _log = new FileLogSink(AppPaths.LogsDirectory);
             _log.Info($"PotatoDM {typeof(App).Assembly.GetName().Version} starting.");
 
+            _settingsStore = new SettingsStore(log: _log);
+
             var settings = await _settingsStore.LoadAsync();
 
             _manager = new DownloadManager(
                 new DispatcherUiDispatcher(Dispatcher),
-                new JobRegistryStore(),
+                new JobRegistryStore(log: _log),
                 new DownloadEngineFactory(_log),
                 settings,
                 new DpapiCookieProtector(),
