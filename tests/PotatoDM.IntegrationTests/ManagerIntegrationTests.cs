@@ -132,6 +132,7 @@ public class ManagerIntegrationTests
         await manager.PauseAsync(result.Job);
         Assert.Equal(DownloadJobState.Paused, result.Job.State);
 
+        await manager.FlushRegistryAsync();
         var record = Assert.Single(
             await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
         Assert.NotNull(record.ProtectedCookies);
@@ -176,6 +177,7 @@ public class ManagerIntegrationTests
         Assert.False(result.Accepted);
         Assert.Equal("no_length", result.Error);
         Assert.Empty(manager.Jobs);
+        await manager.FlushRegistryAsync();
         Assert.Empty(await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
     }
 

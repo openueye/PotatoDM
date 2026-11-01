@@ -71,6 +71,7 @@ public class BrowserHandoffTests
         await manager.PauseAsync(result.Job);
         await WriteStateAsync(result.Job);
 
+        await manager.FlushRegistryAsync();
         var record = Assert.Single(
             await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
         Assert.Equal("http://example.test/page", record.Referer);
@@ -134,6 +135,7 @@ public class BrowserHandoffTests
         Assert.False(result.Accepted);
         Assert.Equal("no_length", result.Error);
         Assert.Empty(manager.Jobs);
+        await manager.FlushRegistryAsync();
         Assert.Empty(await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
         Assert.Equal(0, engine.DownloadCount);
     }

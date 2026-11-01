@@ -1,4 +1,4 @@
-using PotatoDM.AppCore.Job;
+﻿using PotatoDM.AppCore.Job;
 using PotatoDM.AppCore.Models;
 using PotatoDM.Core.Exceptions;
 using PotatoDM.Core.Models;
@@ -11,11 +11,11 @@ namespace PotatoDM.App.Tests;
 /// every concurrency test in <c>DownloadManagerTests</c> holds jobs open with
 /// gates, so nothing exercised "finish instantly, free the slot, start the next".
 ///
-/// <para><b>Scope note — read before trusting this as a guard.</b> The completion
+/// <para><b>Scope note 鈥?read before trusting this as a guard.</b> The completion
 /// continuation is registered with <c>TaskContinuationOptions.None</c> rather than
 /// <c>ExecuteSynchronously</c>, so it never runs inline on the thread that
 /// finished the transfer. That property cannot be observed from outside the
-/// manager, and this test does <i>not</i> fail if the option is reverted — see
+/// manager, and this test does <i>not</i> fail if the option is reverted 鈥?see
 /// the measurement recorded in <c>StartLocked</c>'s comment. What this test does
 /// pin is that a large burst of instantly-failing jobs drains completely, keeps
 /// the concurrency limit, and leaves the manager usable.</para>
@@ -33,6 +33,17 @@ public class DownloadQueuePumpTests
 
         var engine = new FakeDownloadEngine
         {
+            // Unique names keep JobLayout from scanning every earlier job's folder,
+            // so the elapsed time stays a measurement of the pump.
+            OnProbe = (url, _) => Task.FromResult(new ProbeResult(
+                url,
+                url,
+                4096,
+                true,
+                "\"etag\"",
+                null,
+                Path.GetFileName(url.AbsolutePath),
+                "application/octet-stream")),
             // Throwing before the first await keeps the worker task extremely
             // short-lived, which is the shape that frees a slot immediately.
             OnDownload = (_, _) => throw new HttpDownloadException("boom", isTransient: false),
@@ -45,10 +56,11 @@ public class DownloadQueuePumpTests
 
         await manager.InitializeAsync();
 
-        // 200 is still ~67 waves at MaxConcurrentJobs = 3. Higher counts add no
-        // pump coverage: AddAsync rewrites the whole registry each time, so the
-        // loop is O(n²) and 800 jobs spent ~40 s on registry I/O alone.
-        const int count = 200;
+        // 800 jobs is ~267 waves at MaxConcurrentJobs = 3. This used to take ~40 s,
+        // but the cost was JobLayout rescanning every earlier job's folder for a
+        // free "hello (n)" name, not the registry: with unique probe names the
+        // whole test runs in about a second.
+        const int count = 800;
         var jobs = new List<DownloadJob>(count);
 
         for (var index = 0; index < count; index++)

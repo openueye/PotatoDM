@@ -64,6 +64,8 @@ public class DownloadManagerTests
             Path.Combine(folder, "hello", StatePaths.ProcessDirectoryName),
             job.ProcessDirectory);
 
+        // Registry writes are coalesced; this is the durability point.
+        await manager.FlushRegistryAsync();
         var registry = await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync();
         var record = Assert.Single(registry);
         Assert.Equal(job.Id, record.Id);
@@ -77,6 +79,37 @@ public class DownloadManagerTests
         Assert.Equal(100, job.PercentValue);
         Assert.Equal(1, engine.ProbeCount);
         Assert.Equal(1, engine.DownloadCount);
+    }
+
+    [Fact]
+    public async Task A_burst_of_adds_is_flushed_completely_after_coalescing()
+    {
+        using var temp = new TempDirectory();
+        var folder = Path.Combine(temp.Path, "downloads");
+        var engine = new FakeDownloadEngine
+        {
+            OnProbe = (url, _) => Task.FromResult(new ProbeResult(
+                url, url, 4096, true, null, null, "burst.bin", "application/octet-stream")),
+        };
+        var manager = CreateManager(temp, engine, new AppSettings { MaxConcurrentJobs = 0 });
+
+        await manager.InitializeAsync();
+
+        const int count = 40;
+        for (var index = 0; index < count; index++)
+        {
+            await manager.AddAsync(
+                new Uri($"https://example.test/burst{index}.bin"),
+                folder,
+                connections: 1);
+        }
+
+        // Every add requested a save; the coalescing loop must still write all of
+        // them once it is told to flush.
+        await manager.FlushRegistryAsync();
+
+        var records = await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync();
+        Assert.Equal(count, records.Count);
     }
 
     [Fact]
@@ -125,6 +158,7 @@ public class DownloadManagerTests
         Assert.Equal(5, engine.LastDownloadRequest?.Connections);
         Assert.Equal(3, job.BytesDownloaded);
 
+        await manager.FlushRegistryAsync();
         var registry = await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync();
         Assert.EndsWith("index.ts", Assert.Single(registry).TargetPath);
     }
@@ -276,6 +310,7 @@ public class DownloadManagerTests
         await manager.InitializeAsync();
 
         Assert.Empty(manager.Jobs);
+        await manager.FlushRegistryAsync();
         Assert.Empty(await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
     }
 
@@ -368,6 +403,7 @@ public class DownloadManagerTests
         Assert.True(File.Exists(job.TargetPath));
         Assert.False(Directory.Exists(job.ProcessDirectory));
         Assert.All(artifacts, path => Assert.False(File.Exists(path)));
+        await manager.FlushRegistryAsync();
         Assert.Empty(await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
     }
 

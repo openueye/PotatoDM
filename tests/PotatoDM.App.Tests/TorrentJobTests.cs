@@ -47,6 +47,7 @@ public class TorrentJobTests
         await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(DownloadJobState.Completed, result.Job.State);
 
+        await manager.FlushRegistryAsync();
         var record = Assert.Single(
             await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
         Assert.True(record.IsTorrent);
@@ -244,6 +245,7 @@ public class TorrentJobTests
         Assert.Equal(DownloadJobState.Completed, job.State);
         Assert.All(job.SegmentProgresses, chunk => Assert.True(chunk.IsComplete));
 
+        await manager.FlushRegistryAsync();
         var record = Assert.Single(
             await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
         Assert.True(record.IsCompleted);

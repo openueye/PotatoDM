@@ -53,6 +53,16 @@ public sealed class DownloadManager
         new(StringComparer.Ordinal);
     private readonly object _sync = new();
 
+    // Registry writes go through one coalescing loop. Rewriting the whole list per
+    // add and per completion was O(n²) in a burst: 800 instant jobs spent ~40 s in
+    // JSON serialization alone. Callers request a save and never block on disk I/O;
+    // FlushRegistryAsync is the explicit durability point.
+    private static readonly TimeSpan RegistrySaveCoalesceDelay = TimeSpan.FromMilliseconds(100);
+    private readonly object _flushLock = new();
+    private Task _flushLoop = Task.CompletedTask;
+    private long _registryVersion;
+    private long _persistedVersion;
+
     public DownloadManager(
         IUiDispatcher ui,
         JobRegistryStore registry,
@@ -121,8 +131,12 @@ public sealed class DownloadManager
             restoredJobs.Add(job);
         }
 
-        _records.Clear();
-        _records.AddRange(keptRecords);
+        lock (_sync)
+        {
+            _records.Clear();
+            _records.AddRange(keptRecords);
+        }
+
         _jobs.Clear();
 
         foreach (var job in restoredJobs)
@@ -143,7 +157,7 @@ public sealed class DownloadManager
 
         if (keptRecords.Count != records.Count)
         {
-            await SaveRegistryBestEffortAsync(cancellationToken);
+            RequestRegistrySave();
         }
     }
 
@@ -196,14 +210,13 @@ public sealed class DownloadManager
                 ? ProvisionalMediaFileName(probe.SuggestedFileName, probe.FinalUri)
                 : probe.SuggestedFileName;
             var layout = ReserveLayout(folder, suggestedName);
-            await RegisterJobAsync(
+            RegisterJob(
                 job,
                 layout,
                 probe.TotalLength ?? 0,
                 isMedia,
                 isTorrent: false,
-                metadata: null,
-                cancellationToken);
+                metadata: null);
 
             if (!IsRemoved(job.Id))
             {
@@ -264,7 +277,7 @@ public sealed class DownloadManager
     /// Adds a magnet link. Validation is synchronous and cheap, so the job is
     /// queued immediately and peer discovery happens in the worker.
     /// </summary>
-    public async Task<DownloadJob> AddTorrentAsync(
+    public Task<DownloadJob> AddTorrentAsync(
         string source,
         string folder,
         CancellationToken cancellationToken = default)
@@ -280,21 +293,20 @@ public sealed class DownloadManager
         job.SetDisplayName(TorrentSource.SuggestedName(source));
 
         Track(job);
-        await RegisterJobAsync(
+        RegisterJob(
             job,
             layout,
             0,
             isMedia: false,
             isTorrent: true,
-            metadata: null,
-            cancellationToken);
+            metadata: null);
 
         if (!IsRemoved(job.Id))
         {
             Enqueue(job, _settings.Connections, isResume: false);
         }
 
-        return job;
+        return Task.FromResult(job);
     }
 
     /// <summary>
@@ -396,14 +408,13 @@ public sealed class DownloadManager
             }
 
             var layout = ReserveLayout(folder, fileName);
-            await RegisterJobAsync(
+            RegisterJob(
                 job,
                 layout,
                 probe.TotalLength ?? 0,
                 isMedia,
                 isTorrent: false,
-                metadata,
-                cancellationToken);
+                metadata);
 
             if (IsRemoved(job.Id))
             {
@@ -457,7 +468,7 @@ public sealed class DownloadManager
     /// Queues a magnet hand-off straight away: there is nothing to probe, and
     /// a malformed link is rejected before any row appears in the list.
     /// </summary>
-    private async Task<BrowserAddResult> AddBrowserMagnetAsync(
+    private Task<BrowserAddResult> AddBrowserMagnetAsync(
         BrowserDownloadContext context,
         string folder,
         JobRequestMetadata metadata,
@@ -478,41 +489,47 @@ public sealed class DownloadManager
             job.SetDisplayName(TorrentSource.SuggestedName(source));
 
             Track(job);
-            await RegisterJobAsync(
+            RegisterJob(
                 job,
                 layout,
                 0,
                 isMedia: false,
                 isTorrent: true,
-                metadata,
-                cancellationToken);
+                metadata);
 
             if (IsRemoved(job.Id))
             {
-                return CacheBrowserResult(
+                return Task.FromResult(CacheBrowserResult(
                     context.RequestId,
-                    BrowserAddResult.Reject("cancelled", "下载已被取消。"));
+                    BrowserAddResult.Reject("cancelled", "下载已被取消。")));
             }
 
             Enqueue(job, _settings.Connections, isResume: false);
-            return CacheBrowserResult(context.RequestId, BrowserAddResult.Accept(job));
+            return Task.FromResult(
+                CacheBrowserResult(context.RequestId, BrowserAddResult.Accept(job)));
         }
         catch (OperationCanceledException)
         {
-            return CacheBrowserResult(
+            return Task.FromResult(CacheBrowserResult(
                 context.RequestId,
-                BrowserAddResult.Reject("cancelled", "下载已被取消。"));
+                BrowserAddResult.Reject("cancelled", "下载已被取消。")));
         }
         catch (Exception ex)
         {
             if (job is not null)
             {
                 CleanupAfterFailure(job);
-                _records.RemoveAll(record => record.Id == job.Id);
+
+                lock (_sync)
+                {
+                    _records.RemoveAll(record => record.Id == job.Id);
+                }
+
                 RemovePlaceholder(job);
             }
 
-            return CacheBrowserResult(context.RequestId, MapBrowserFailure(ex));
+            return Task.FromResult(
+                CacheBrowserResult(context.RequestId, MapBrowserFailure(ex)));
         }
     }
 
@@ -592,7 +609,11 @@ public sealed class DownloadManager
         await WaitForJobAsync(job.Id, TimeSpan.FromSeconds(15));
 
         _jobs.Remove(job);
-        _records.RemoveAll(record => record.Id == job.Id);
+
+        lock (_sync)
+        {
+            _records.RemoveAll(record => record.Id == job.Id);
+        }
 
         ReleaseReservations(job);
 
@@ -608,7 +629,7 @@ public sealed class DownloadManager
             DeleteProcessArtifacts(job);
         }
 
-        await SaveRegistryBestEffortAsync();
+        RequestRegistrySave();
     }
 
     /// <summary>Cancels every active job and waits for the sidecars to be saved.</summary>
@@ -655,7 +676,9 @@ public sealed class DownloadManager
             }
         }
 
-        await SaveRegistryBestEffortAsync();
+        // Pausing is the last step before most shutdowns, so make the registry
+        // durable here instead of leaving it to the coalescing loop.
+        await FlushRegistryAsync();
     }
 
     public Task ResumeAllAsync()
@@ -945,7 +968,14 @@ public sealed class DownloadManager
 
             PostCompletion(job, result.TargetPath, result.TotalBytes);
 
-            await _ui.InvokeAsync(() => SaveRegistryBestEffortAsync());
+            // PostCompletion mutates the record on the dispatcher, so the save
+            // request must be queued behind it; InvokeAsync also makes the request
+            // visible before the job is considered finished.
+            await _ui.InvokeAsync(() =>
+            {
+                RequestRegistrySave();
+                return Task.CompletedTask;
+            });
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -1021,7 +1051,11 @@ public sealed class DownloadManager
 
             PostCompletion(job, result.TargetPath, result.TotalBytes);
 
-            await _ui.InvokeAsync(() => SaveRegistryBestEffortAsync());
+            await _ui.InvokeAsync(() =>
+            {
+                RequestRegistrySave();
+                return Task.CompletedTask;
+            });
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -1366,19 +1400,18 @@ public sealed class DownloadManager
 
     private void UpdateRecordTarget(string jobId, string targetPath)
     {
-        var record = _records.FirstOrDefault(item => item.Id == jobId);
-        if (record is null)
-        {
-            return;
-        }
-
         lock (_sync)
         {
+            var record = _records.FirstOrDefault(item => item.Id == jobId);
+            if (record is null)
+            {
+                return;
+            }
+
             _reservedTargets.Remove(record.TargetPath);
             _reservedTargets.Add(targetPath);
+            record.TargetPath = targetPath;
         }
-
-        record.TargetPath = targetPath;
     }
 
     private static string? ChooseFileName(string? probeName, string? browserName)
@@ -1593,23 +1626,108 @@ public sealed class DownloadManager
         }
     }
 
-    private async Task SaveRegistryBestEffortAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Marks the registry dirty. The write itself happens on a background loop that
+    /// coalesces a burst into one pass, so callers are never blocked on disk I/O.
+    /// </summary>
+    private void RequestRegistrySave()
     {
-        try
+        lock (_flushLock)
         {
-            await _registry.SaveAsync(_records.ToList(), cancellationToken);
+            // Read by the loop while it holds only _sync, so keep the bump atomic
+            // rather than relying on the two locks lining up.
+            Interlocked.Increment(ref _registryVersion);
+            EnsureFlushLoopLocked();
         }
-        catch (IOException ex)
+    }
+
+    /// <summary>
+    /// Waits for the coalescing loop to catch up with every change requested so far.
+    /// Write failures are logged and not retried, as before, so this is a durability
+    /// point rather than a guarantee that the file was replaced. Used before
+    /// shutdown, and by tests that read <c>jobs.json</c> directly.
+    /// </summary>
+    public async Task FlushRegistryAsync(CancellationToken cancellationToken = default)
+    {
+        Task loop;
+        long target;
+
+        lock (_flushLock)
         {
-            _log.Warning("The job list could not be saved; it will be incomplete after a restart.", ex);
+            target = _registryVersion;
+            loop = _persistedVersion >= target ? Task.CompletedTask : EnsureFlushLoopLocked();
         }
-        catch (UnauthorizedAccessException ex)
+
+        while (true)
         {
-            _log.Warning("The job list could not be saved; it will be incomplete after a restart.", ex);
+            await loop.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            lock (_flushLock)
+            {
+                if (_persistedVersion >= target)
+                {
+                    return;
+                }
+
+                // The loop we awaited had already finished its last pass when the
+                // request arrived; start one that sees it.
+                loop = EnsureFlushLoopLocked();
+            }
         }
-        catch (OperationCanceledException)
+    }
+
+    private Task EnsureFlushLoopLocked()
+    {
+        if (_flushLoop.IsCompleted)
         {
-            // Shutdown raced the save; the next session rewrites the registry anyway.
+            _flushLoop = FlushRegistryLoopAsync();
+        }
+
+        return _flushLoop;
+    }
+
+    private async Task FlushRegistryLoopAsync()
+    {
+        // Let a burst of adds finish first, so N requests become one write instead
+        // of N full-list rewrites.
+        await Task.Delay(RegistrySaveCoalesceDelay).ConfigureAwait(false);
+
+        while (true)
+        {
+            long version;
+            List<JobRecord> snapshot;
+
+            lock (_sync)
+            {
+                version = Volatile.Read(ref _registryVersion);
+                snapshot = _records.ToList();
+            }
+
+            try
+            {
+                await _registry.SaveAsync(snapshot).ConfigureAwait(false);
+            }
+            catch (IOException ex)
+            {
+                _log.Warning("The job list could not be saved; it will be incomplete after a restart.", ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _log.Warning("The job list could not be saved; it will be incomplete after a restart.", ex);
+            }
+
+            lock (_flushLock)
+            {
+                if (version > _persistedVersion)
+                {
+                    _persistedVersion = version;
+                }
+
+                if (version == Volatile.Read(ref _registryVersion))
+                {
+                    return;
+                }
+            }
         }
     }
 
@@ -1793,38 +1911,40 @@ public sealed class DownloadManager
         _jobs.Add(job);
     }
 
-    private async Task RegisterJobAsync(
+    private void RegisterJob(
         DownloadJob job,
         JobPaths layout,
         long totalBytes,
         bool isMedia,
         bool isTorrent,
-        JobRequestMetadata? metadata,
-        CancellationToken cancellationToken)
+        JobRequestMetadata? metadata)
     {
         job.IsMedia = isMedia;
         job.IsTorrent = isTorrent;
         job.ResolveTarget(layout.TargetPath, layout.StatePath, totalBytes, layout.TaskDirectory);
 
-        _records.Add(new JobRecord
+        lock (_sync)
         {
-            Id = job.Id,
-            Url = job.Url,
-            TargetPath = layout.TargetPath,
-            StatePath = layout.StatePath,
-            TaskDirectory = layout.TaskDirectory,
-            IsMedia = isMedia,
-            IsTorrent = isTorrent,
-            CreatedUtc = job.CreatedUtc,
-            Referer = metadata?.Referer,
-            UserAgent = metadata?.UserAgent,
-            ProtectedCookies = ProtectCookies(metadata?.Cookies),
-            ExtraHeaders = metadata?.ExtraHeaders is null
-                ? null
-                : new Dictionary<string, string>(metadata.ExtraHeaders),
-        });
+            _records.Add(new JobRecord
+            {
+                Id = job.Id,
+                Url = job.Url,
+                TargetPath = layout.TargetPath,
+                StatePath = layout.StatePath,
+                TaskDirectory = layout.TaskDirectory,
+                IsMedia = isMedia,
+                IsTorrent = isTorrent,
+                CreatedUtc = job.CreatedUtc,
+                Referer = metadata?.Referer,
+                UserAgent = metadata?.UserAgent,
+                ProtectedCookies = ProtectCookies(metadata?.Cookies),
+                ExtraHeaders = metadata?.ExtraHeaders is null
+                    ? null
+                    : new Dictionary<string, string>(metadata.ExtraHeaders),
+            });
+        }
 
-        await SaveRegistryBestEffortAsync(cancellationToken);
+        RequestRegistrySave();
     }
 
     private void PostCompletion(DownloadJob job, string? targetPath, long totalBytes)
@@ -1845,11 +1965,14 @@ public sealed class DownloadManager
 
     private void MarkRecordCompleted(string jobId)
     {
-        var record = _records.FirstOrDefault(item => item.Id == jobId);
-
-        if (record is not null)
+        lock (_sync)
         {
-            record.IsCompleted = true;
+            var record = _records.FirstOrDefault(item => item.Id == jobId);
+
+            if (record is not null)
+            {
+                record.IsCompleted = true;
+            }
         }
     }
 
