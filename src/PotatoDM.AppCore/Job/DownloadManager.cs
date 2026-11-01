@@ -735,19 +735,17 @@ public sealed class DownloadManager
         _running[job.Id] = task;
 
         // Never run the continuation inline. OnTransferCompleted re-enters this
-        // lock and pumps the queue again, so an inline continuation would put
-        // arbitrary completion work on the completing thread's stack — and, if a
-        // started task were ever observed as already complete here, would recurse
-        // once per queued job until the stack is gone (an uncatchable crash).
-        // Keeping the continuation queued makes the completion path independent
-        // of whichever thread finished the transfer.
+        // lock and pumps the queue again, so an inline continuation would run the
+        // next job's start — and its completion — on the finishing thread's stack,
+        // recursing once per queued job.
         //
-        // Measured on .NET 8: with ExecuteSynchronously the inline path fires 0 in
-        // 50000 starts for Task.Run(Func<Task>) (the overload used here, whose
-        // unwrapping proxy is never complete at registration), but 9997 in 50000
-        // for Task.Run(Action). The hazard is therefore latent rather than active
-        // today: it becomes live the moment this call site changes overload or
-        // short-circuits to an already-completed task.
+        // That is latent rather than active, but only by scheduling luck. Inlining
+        // needs the started task to be already complete here; measured on .NET 8
+        // for ExecuteSynchronously, that lands 16.3% of registrations for a
+        // Task.Run(Func<Task>) whose inner task completed synchronously, 6.6% for
+        // Task.Run(Action), and 0% when the inner task faults or genuinely awaits.
+        // Nothing guarantees RunAsync cannot finish synchronously, so the safety
+        // of this call site must not rest on it.
         _ = task.ContinueWith(
             _ => OnTransferCompleted(job, task, cancellation),
             CancellationToken.None,

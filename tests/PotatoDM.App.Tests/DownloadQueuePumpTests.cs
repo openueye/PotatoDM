@@ -22,6 +22,9 @@ namespace PotatoDM.App.Tests;
 /// </summary>
 public class DownloadQueuePumpTests
 {
+    // Behavioural regression for the pump, NOT a stack-overflow guard: this passes
+    // with ExecuteSynchronously restored (verified with 3000 jobs), because a job
+    // whose worker task faults synchronously does not inline the continuation.
     [Fact]
     public async Task Many_instantly_failing_jobs_drain_and_leave_the_manager_usable()
     {
