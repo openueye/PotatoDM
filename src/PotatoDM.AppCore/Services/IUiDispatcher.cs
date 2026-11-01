@@ -6,8 +6,6 @@ namespace PotatoDM.AppCore.Services;
 /// </summary>
 public interface IUiDispatcher
 {
-    bool IsCurrent { get; }
-
     void Post(Action action);
 
     /// <summary>Runs work on the UI thread and completes after it has finished.</summary>

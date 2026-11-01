@@ -12,8 +12,6 @@ public sealed class DispatcherUiDispatcher : IUiDispatcher
         _dispatcher = dispatcher;
     }
 
-    public bool IsCurrent => _dispatcher.CheckAccess();
-
     public void Post(Action action)
     {
         if (_dispatcher.CheckAccess())

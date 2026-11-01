@@ -4,8 +4,6 @@ namespace PotatoDM.IntegrationTests;
 
 internal sealed class InlineDispatcher : IUiDispatcher
 {
-    public bool IsCurrent => true;
-
     public void Post(Action action) => action();
 
     public Task InvokeAsync(Func<Task> action) => action();

@@ -8,7 +8,13 @@ namespace PotatoDM.Core.Storage;
 /// each segment directly at its absolute offset, so there is never a part-file
 /// merge step.
 /// </summary>
-public sealed class RandomAccessOutputFile : IOutputFile
+/// <remarks>
+/// The class is used through its concrete type everywhere (<c>JobRuntime.File</c>,
+/// <c>SegmentWorker</c>, the storage tests), so there is no interface to keep in
+/// sync. <c>await using</c> binds to the public <see cref="DisposeAsync"/> by
+/// pattern, which is why it still works without <see cref="IAsyncDisposable"/>.
+/// </remarks>
+public sealed class RandomAccessOutputFile
 {
     private readonly string _workingPath;
     private SafeFileHandle? _handle;

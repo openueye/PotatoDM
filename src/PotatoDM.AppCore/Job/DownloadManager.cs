@@ -44,7 +44,6 @@ public sealed class DownloadManager
         Task<TorrentDownloadResult>> _torrentDownloader;
     private readonly ObservableCollection<DownloadJob> _jobs = new();
     private readonly List<JobRecord> _records = new();
-    private readonly Dictionary<string, DownloadJob> _byId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CancellationTokenSource> _cancellations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Task> _running = new(StringComparer.Ordinal);
     private readonly List<PendingStart> _queue = new();
@@ -125,12 +124,10 @@ public sealed class DownloadManager
         _records.Clear();
         _records.AddRange(keptRecords);
         _jobs.Clear();
-        _byId.Clear();
 
         foreach (var job in restoredJobs)
         {
             _jobs.Add(job);
-            _byId[job.Id] = job;
         }
 
         lock (_sync)
@@ -595,7 +592,6 @@ public sealed class DownloadManager
         await WaitForJobAsync(job.Id, TimeSpan.FromSeconds(15));
 
         _jobs.Remove(job);
-        _byId.Remove(job.Id);
         _records.RemoveAll(record => record.Id == job.Id);
 
         ReleaseReservations(job);
@@ -1549,7 +1545,6 @@ public sealed class DownloadManager
     private void RemovePlaceholder(DownloadJob job)
     {
         _jobs.Remove(job);
-        _byId.Remove(job.Id);
     }
 
     private void RemoveProbeCancellation(string jobId, CancellationTokenSource probeCts)
@@ -1796,7 +1791,6 @@ public sealed class DownloadManager
     private void Track(DownloadJob job)
     {
         _jobs.Add(job);
-        _byId[job.Id] = job;
     }
 
     private async Task RegisterJobAsync(
