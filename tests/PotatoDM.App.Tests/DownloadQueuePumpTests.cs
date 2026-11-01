@@ -45,7 +45,10 @@ public class DownloadQueuePumpTests
 
         await manager.InitializeAsync();
 
-        const int count = 800;
+        // 200 is still ~67 waves at MaxConcurrentJobs = 3. Higher counts add no
+        // pump coverage: AddAsync rewrites the whole registry each time, so the
+        // loop is O(n²) and 800 jobs spent ~40 s on registry I/O alone.
+        const int count = 200;
         var jobs = new List<DownloadJob>(count);
 
         for (var index = 0; index < count; index++)

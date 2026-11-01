@@ -441,7 +441,7 @@ public static class HlsPlaylistParser
         throw new MediaManifestException($"'{value}' is not a valid URI.");
     }
 
-    private static IReadOnlyList<string> SplitLines(string text)
+    private static List<string> SplitLines(string text)
     {
         if (text.Length > 0 && text[0] == '\uFEFF')
         {

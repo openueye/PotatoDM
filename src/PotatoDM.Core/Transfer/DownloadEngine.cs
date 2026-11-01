@@ -17,12 +17,10 @@ public sealed class DownloadEngine : IDownloadEngine
     private const long DefaultMinBytesForSegmented = 2 * 1024 * 1024;
 
     private readonly IDownloadStateStore _store;
-    private readonly SegmentPlanner _planner;
     private readonly UrlProbe _probe;
     private readonly ILogSink _log;
 
     /// <param name="store">Sidecar store; defaults to a JSON store on disk.</param>
-    /// <param name="planner">Segment planner.</param>
     /// <param name="probe">URL probe.</param>
     /// <param name="log">
     /// Optional sink, appended last so every existing call site keeps compiling.
@@ -30,13 +28,11 @@ public sealed class DownloadEngine : IDownloadEngine
     /// </param>
     public DownloadEngine(
         IDownloadStateStore? store = null,
-        SegmentPlanner? planner = null,
         UrlProbe? probe = null,
         ILogSink? log = null)
     {
         _log = log ?? NullLogSink.Instance;
         _store = store ?? new JsonDownloadStateStore(_log);
-        _planner = planner ?? new SegmentPlanner();
         _probe = probe ?? new UrlProbe();
     }
 
@@ -114,7 +110,7 @@ public sealed class DownloadEngine : IDownloadEngine
 
         EnsureDiskSpace(targetPath, totalLength);
 
-        var segments = _planner.Plan(
+        var segments = SegmentPlanner.Plan(
             totalLength,
             probe.SupportsRanges,
             request.Connections,
@@ -186,7 +182,7 @@ public sealed class DownloadEngine : IDownloadEngine
     {
         RaiseStateChanged(JobStatus.Downloading);
 
-        var result = await new MediaDownloader()
+        var result = await MediaDownloader
             .DownloadAsync(client, request, kind, probe, RaiseProgress, cancellationToken)
             .ConfigureAwait(false);
 
@@ -273,7 +269,7 @@ public sealed class DownloadEngine : IDownloadEngine
             DeleteFileIfExists(workingPath);
 
             var segmentCount = Math.Max(1, state.Segments.Count);
-            state.Segments = _planner.Plan(
+            state.Segments = SegmentPlanner.Plan(
                     totalLength,
                     probe.SupportsRanges,
                     segmentCount,
@@ -771,7 +767,7 @@ public sealed class DownloadEngine : IDownloadEngine
         if (request.StallTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(request.StallTimeout), "Stall timeout must be positive.");
+                nameof(request), "StallTimeout must be positive.");
         }
     }
 
@@ -784,7 +780,7 @@ public sealed class DownloadEngine : IDownloadEngine
         if (options.StallTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(options.StallTimeout), "Stall timeout must be positive.");
+                nameof(options), "StallTimeout must be positive.");
         }
     }
 

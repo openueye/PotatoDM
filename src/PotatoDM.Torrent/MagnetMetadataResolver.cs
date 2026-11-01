@@ -44,8 +44,7 @@ internal static class MagnetMetadataResolver
             return cached;
         }
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var handedOff = false;
+        CancellationTokenSource? linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         try
         {
@@ -67,9 +66,12 @@ internal static class MagnetMetadataResolver
                     // Do not wait for the losing attempt. MonoTorrent can take
                     // a minute to tear down its metadata engine, and the caller
                     // already has valid metadata. The continuation only
-                    // observes the cancellation and releases the token source.
-                    handedOff = true;
-                    _ = ObserveFailuresAsync(pending, linked);
+                    // observes the cancellation and releases the token source,
+                    // so ownership moves to it and the finally block must not
+                    // dispose the source underneath it.
+                    var ownedByObserver = linked;
+                    linked = null;
+                    _ = ObserveFailuresAsync(pending, ownedByObserver!);
                     return finished.Result;
                 }
 
@@ -79,10 +81,7 @@ internal static class MagnetMetadataResolver
         }
         finally
         {
-            if (!handedOff)
-            {
-                linked.Dispose();
-            }
+            linked?.Dispose();
         }
 
         throw new TorrentException(

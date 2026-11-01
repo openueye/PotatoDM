@@ -6,9 +6,9 @@ namespace PotatoDM.Core.Planning;
 /// Splits a resource into contiguous, gap-free byte ranges. Small resources or
 /// servers without Range support collapse to one segment.
 /// </summary>
-public sealed class SegmentPlanner
+public static class SegmentPlanner
 {
-    public IReadOnlyList<DownloadSegment> Plan(
+    public static IReadOnlyList<DownloadSegment> Plan(
         long totalLength,
         bool supportsRanges,
         int connections,
@@ -25,7 +25,7 @@ public sealed class SegmentPlanner
 
         if (!supportsRanges || connections == 1 || totalLength <= minBytesForSegmented)
         {
-            return Single(totalLength);
+            return SingleSegment(totalLength);
         }
 
         var maxByMinSize = minSegmentSize > 0
@@ -35,7 +35,7 @@ public sealed class SegmentPlanner
         var count = (int)Math.Min((long)connections, Math.Max(1L, maxByMinSize));
         if (count <= 1)
         {
-            return Single(totalLength);
+            return SingleSegment(totalLength);
         }
 
         var baseSize = totalLength / count;
@@ -58,7 +58,7 @@ public sealed class SegmentPlanner
         return segments;
     }
 
-    public static IReadOnlyList<DownloadSegment> Single(long totalLength)
+    public static IReadOnlyList<DownloadSegment> SingleSegment(long totalLength)
     {
         return new[] { new DownloadSegment { Index = 0, Start = 0, EndExclusive = totalLength } };
     }

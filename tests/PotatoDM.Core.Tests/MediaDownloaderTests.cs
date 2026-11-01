@@ -49,7 +49,7 @@ public class MediaDownloaderTests
         using var client = new HttpClient(handler);
         var target = Path.Combine(temp.Path, "movie");
 
-        var result = await new MediaDownloader().DownloadAsync(
+        var result = await MediaDownloader.DownloadAsync(
             client,
             Request(target),
             ManifestKind.Hls,
@@ -89,7 +89,7 @@ public class MediaDownloaderTests
         using var client = new HttpClient(handler);
         var manifestUrl = new Uri("http://media.test/enc.m3u8");
 
-        var result = await new MediaDownloader().DownloadAsync(
+        var result = await MediaDownloader.DownloadAsync(
             client,
             Request(Path.Combine(temp.Path, "encrypted"), manifestUrl),
             ManifestKind.Hls,
@@ -121,7 +121,7 @@ public class MediaDownloaderTests
         var manifestUrl = new Uri("http://media.test/drm.m3u8");
 
         var error = await Assert.ThrowsAsync<DrmProtectedException>(() =>
-            new MediaDownloader().DownloadAsync(
+            MediaDownloader.DownloadAsync(
                 client,
                 Request(Path.Combine(temp.Path, "drm"), manifestUrl),
                 ManifestKind.Hls,
@@ -161,7 +161,7 @@ public class MediaDownloaderTests
         using var client = new HttpClient(handler);
         var manifestUrl = new Uri("http://media.test/manifest.mpd");
 
-        var result = await new MediaDownloader().DownloadAsync(
+        var result = await MediaDownloader.DownloadAsync(
             client,
             Request(Path.Combine(temp.Path, "dash"), manifestUrl),
             ManifestKind.Dash,
@@ -201,7 +201,7 @@ public class MediaDownloaderTests
         var manifestUrl = new Uri("http://media.test/master.m3u8");
 
         var error = await Assert.ThrowsAsync<MediaMergeException>(() =>
-            new MediaDownloader().DownloadAsync(
+            MediaDownloader.DownloadAsync(
                 client,
                 Request(Path.Combine(temp.Path, "muxed"), manifestUrl),
                 ManifestKind.Hls,

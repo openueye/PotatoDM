@@ -7,12 +7,10 @@ namespace PotatoDM.Core.Tests;
 
 public class SegmentPlannerTests
 {
-    private readonly SegmentPlanner _planner = new();
-
     [Fact]
     public void Zero_length_yields_one_empty_segment()
     {
-        var segments = _planner.Plan(0, true, 8, 1, 1);
+        var segments = SegmentPlanner.Plan(0, true, 8, 1, 1);
 
         var segment = Assert.Single(segments);
         Assert.Equal(0, segment.Start);
@@ -29,7 +27,7 @@ public class SegmentPlannerTests
         long minSegmentSize,
         long minBytesForSegmented)
     {
-        var segments = _planner.Plan(
+        var segments = SegmentPlanner.Plan(
             1000, supportsRanges, connections, minSegmentSize, minBytesForSegmented);
 
         var segment = Assert.Single(segments);
@@ -40,7 +38,7 @@ public class SegmentPlannerTests
     [Fact]
     public void Splits_evenly_when_size_divides()
     {
-        var segments = _planner.Plan(100, true, 4, 10, 2);
+        var segments = SegmentPlanner.Plan(100, true, 4, 10, 2);
 
         Assert.Equal(4, segments.Count);
         Assert.Equal(new[] { (0L, 25L), (25L, 50L), (50L, 75L), (75L, 100L) },
@@ -50,7 +48,7 @@ public class SegmentPlannerTests
     [Fact]
     public void Distributes_remainder_to_leading_segments()
     {
-        var segments = _planner.Plan(10, true, 3, 1, 2);
+        var segments = SegmentPlanner.Plan(10, true, 3, 1, 2);
 
         Assert.Equal(new[] { (0L, 4L), (4L, 7L), (7L, 10L) },
             segments.Select(s => (s.Start, s.EndExclusive)).ToArray());
@@ -59,7 +57,7 @@ public class SegmentPlannerTests
     [Fact]
     public void Minimum_segment_size_limits_connection_count()
     {
-        var segments = _planner.Plan(16, true, 8, 8, 1);
+        var segments = SegmentPlanner.Plan(16, true, 8, 8, 1);
 
         Assert.Equal(2, segments.Count);
         Assert.All(segments, s => Assert.Equal(8, s.Length));
@@ -79,7 +77,7 @@ public class SegmentPlannerTests
     {
         foreach (var connections in new[] { 1, 2, 3, 8, 16 })
         {
-            var segments = _planner.Plan(
+            var segments = SegmentPlanner.Plan(
                 total, true, connections, 4096, 2 * 1024 * 1024);
 
             var expectedStart = 0L;
@@ -98,7 +96,7 @@ public class SegmentPlannerTests
     [Fact]
     public void Single_helper_covers_full_resource()
     {
-        var segment = Assert.Single(SegmentPlanner.Single(123));
+        var segment = Assert.Single(SegmentPlanner.SingleSegment(123));
 
         Assert.Equal(0, segment.Start);
         Assert.Equal(123, segment.EndExclusive);

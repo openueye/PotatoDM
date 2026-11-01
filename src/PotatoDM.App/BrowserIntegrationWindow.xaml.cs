@@ -16,8 +16,6 @@ public partial class BrowserIntegrationWindow : Window
     private static readonly Brush NeutralBackground = Frozen(0xF1, 0xF0, 0xEC);
     private static readonly Brush NeutralForeground = Frozen(0x77, 0x71, 0x6A);
 
-    private readonly BrowserIntegrationInstaller _installer = new();
-
     public BrowserIntegrationWindow()
     {
         InitializeComponent();
@@ -26,7 +24,7 @@ public partial class BrowserIntegrationWindow : Window
 
     private void Refresh()
     {
-        var status = _installer.GetStatus();
+        var status = BrowserIntegrationInstaller.GetStatus();
 
         SetBadge(
             HostBadge,
@@ -99,7 +97,7 @@ public partial class BrowserIntegrationWindow : Window
         label.Foreground = foreground;
     }
 
-    private static Brush Frozen(byte r, byte g, byte b)
+    private static SolidColorBrush Frozen(byte r, byte g, byte b)
     {
         var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
         brush.Freeze();
@@ -108,7 +106,7 @@ public partial class BrowserIntegrationWindow : Window
 
     private void OnInstall(object sender, RoutedEventArgs e)
     {
-        Run(() => _installer.Install(), "安装完成。打开浏览器扩展页即可加载扩展。");
+        Run(BrowserIntegrationInstaller.Install, "安装完成。打开浏览器扩展页即可加载扩展。");
     }
 
     private void OnUninstall(object sender, RoutedEventArgs e)
@@ -125,17 +123,17 @@ public partial class BrowserIntegrationWindow : Window
             return;
         }
 
-        Run(_installer.Uninstall, "已移除浏览器集成。");
+        Run(BrowserIntegrationInstaller.Uninstall, "已移除浏览器集成。");
     }
 
     private void OnOpenFolder(object sender, RoutedEventArgs e) =>
-        Run(_installer.OpenExtensionFolder, null);
+        Run(BrowserIntegrationInstaller.OpenExtensionFolder, null);
 
     private void OnOpenChrome(object sender, RoutedEventArgs e) =>
-        Run(() => _installer.OpenExtensionPage(BrowserKind.Chrome), null);
+        Run(() => BrowserIntegrationInstaller.OpenExtensionPage(BrowserKind.Chrome), null);
 
     private void OnOpenEdge(object sender, RoutedEventArgs e) =>
-        Run(() => _installer.OpenExtensionPage(BrowserKind.Edge), null);
+        Run(() => BrowserIntegrationInstaller.OpenExtensionPage(BrowserKind.Edge), null);
 
     private void OnCopyExtensionId(object sender, RoutedEventArgs e) =>
         Copy(ExtensionIdBox.Text, "扩展 ID 已复制。");

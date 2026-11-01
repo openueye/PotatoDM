@@ -90,7 +90,7 @@ public class TorrentDownloaderTests
     {
         using var timeout = new CancellationTokenSource(DownloadTimeout);
 
-        return await new TorrentDownloader().DownloadAsync(request, null, timeout.Token);
+        return await TorrentDownloader.DownloadAsync(request, null, timeout.Token);
     }
 
     private static async Task<string> CreateTorrentFileAsync(

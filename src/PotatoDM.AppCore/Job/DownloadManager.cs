@@ -88,7 +88,7 @@ public sealed class DownloadManager
         _manualProbeTimeout = manualProbeTimeout ?? TimeSpan.FromSeconds(30);
         _torrentDownloader = torrentDownloader
             ?? ((request, progress, token) =>
-                new TorrentDownloader().DownloadAsync(request, progress, token));
+                TorrentDownloader.DownloadAsync(request, progress, token));
         Jobs = new ReadOnlyObservableCollection<DownloadJob>(_jobs);
     }
 
@@ -1052,7 +1052,7 @@ public sealed class DownloadManager
     /// libtorrent (via csdl) exposes only an overall fraction, not a piece
     /// map, so torrents are drawn as fixed chunks filled by byte progress.
     /// </summary>
-    private static IReadOnlyList<DownloadSegmentProgress>? BuildTorrentChunks(
+    private static DownloadSegmentProgress[]? BuildTorrentChunks(
         long downloaded,
         long totalBytes)
     {
@@ -1413,7 +1413,7 @@ public sealed class DownloadManager
         }
     }
 
-    private IReadOnlyList<RequestCookie>? UnprotectCookies(string? protectedCookies)
+    private List<RequestCookie>? UnprotectCookies(string? protectedCookies)
     {
         if (string.IsNullOrWhiteSpace(protectedCookies))
         {

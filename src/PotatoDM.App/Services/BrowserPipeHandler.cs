@@ -115,7 +115,7 @@ public sealed class BrowserPipeHandler
             _ => null,
         };
 
-    private static IReadOnlyList<RequestCookie>? SanitizeCookies(
+    private static List<RequestCookie>? SanitizeCookies(
         IReadOnlyList<BrowserCookieDto>? cookies)
     {
         if (cookies is null || cookies.Count == 0)
@@ -185,7 +185,7 @@ public sealed class BrowserPipeHandler
         }
     }
 
-    private static IReadOnlyDictionary<string, string>? SanitizeHeaders(
+    private static Dictionary<string, string>? SanitizeHeaders(
         IReadOnlyDictionary<string, string>? headers)
     {
         if (headers is null || headers.Count == 0)

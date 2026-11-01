@@ -219,10 +219,7 @@ public static class CliApp
 		}
 		finally
 		{
-			if (cancellation != null)
-			{
-				((IDisposable)cancellation).Dispose();
-			}
+			cancellation.Dispose();
 		}
 	}
 
@@ -361,8 +358,7 @@ public static class CliApp
 			SeedAfterDownload = parsed.GetBool("seed")
 		};
 		DateTime lastReport = DateTime.UtcNow;
-		TorrentDownloader downloader = new TorrentDownloader();
-		TorrentDownloadResult result = await downloader.DownloadAsync(request, delegate(TorrentProgress progress)
+		TorrentDownloadResult result = await TorrentDownloader.DownloadAsync(request, delegate(TorrentProgress progress)
 		{
 			if (json)
 			{

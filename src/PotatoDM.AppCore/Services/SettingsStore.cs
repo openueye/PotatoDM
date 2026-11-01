@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using PotatoDM.AppCore.Models;
 using PotatoDM.Core.Diagnostics;
@@ -5,6 +6,11 @@ using PotatoDM.Core.Diagnostics;
 namespace PotatoDM.AppCore.Services;
 
 /// <summary>Persists user preferences; damaged files fall back to defaults.</summary>
+[SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The semaphore never creates a wait handle (AvailableWaitHandle is unused), " +
+                    "so it owns nothing to release. The store lives for the process lifetime.")]
 public sealed class SettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

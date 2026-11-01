@@ -13,7 +13,7 @@ using PotatoDM.Core.Storage;
 
 namespace PotatoDM.App.Services;
 
-public sealed class BrowserIntegrationInstaller
+public static class BrowserIntegrationInstaller
 {
 	public const string HostName = "com.potatodm.dm";
 
@@ -32,21 +32,21 @@ public sealed class BrowserIntegrationInstaller
 		WriteIndented = true
 	};
 
-	public string BrowserRoot => Path.Combine(AppPaths.Root, "browser");
+	public static string BrowserRoot => Path.Combine(AppPaths.Root, "browser");
 
-	public string ChromiumExtensionPath => Path.Combine(BrowserRoot, "chromium");
+	public static string ChromiumExtensionPath => Path.Combine(BrowserRoot, "chromium");
 
-	private string SourceRoot => Path.Combine(AppContext.BaseDirectory, "browser-ext");
+	private static string SourceRoot => Path.Combine(AppContext.BaseDirectory, "browser-ext");
 
-	private string HostExePath => Path.Combine(AppContext.BaseDirectory, "PotatoDM.BrowserHost.exe");
+	private static string HostExePath => Path.Combine(AppContext.BaseDirectory, "PotatoDM.BrowserHost.exe");
 
-	private string ChromiumManifestPath => Path.Combine(BrowserRoot, "com.potatodm.dm.chromium.json");
+	private static string ChromiumManifestPath => Path.Combine(BrowserRoot, "com.potatodm.dm.chromium.json");
 
-	private string LegacyFirefoxExtensionPath => Path.Combine(BrowserRoot, "firefox");
+	private static string LegacyFirefoxExtensionPath => Path.Combine(BrowserRoot, "firefox");
 
-	private string LegacyFirefoxManifestPath => Path.Combine(BrowserRoot, "com.potatodm.dm.firefox.json");
+	private static string LegacyFirefoxManifestPath => Path.Combine(BrowserRoot, "com.potatodm.dm.firefox.json");
 
-	public BrowserInstallStatus GetStatus()
+	public static BrowserInstallStatus GetStatus()
 	{
 		string text = TryReadChromeId(Path.Combine(SourceRoot, "chromium", "manifest.json"));
 		string text2 = TryReadChromeId(Path.Combine(ChromiumExtensionPath, "manifest.json"));
@@ -67,7 +67,7 @@ public sealed class BrowserIntegrationInstaller
 		};
 	}
 
-	public void Install()
+	public static void Install()
 	{
 		EnsureSources();
 		CleanupLegacyFirefox();
@@ -87,7 +87,7 @@ public sealed class BrowserIntegrationInstaller
 		Register("Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.potatodm.dm", ChromiumManifestPath);
 	}
 
-	public void Uninstall()
+	public static void Uninstall()
 	{
 		DeleteRegistryKey("Software\\Google\\Chrome\\NativeMessagingHosts\\com.potatodm.dm");
 		DeleteRegistryKey("Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.potatodm.dm");
@@ -96,7 +96,7 @@ public sealed class BrowserIntegrationInstaller
 		CleanupLegacyFirefox();
 	}
 
-	public void OpenExtensionFolder()
+	public static void OpenExtensionFolder()
 	{
 		Directory.CreateDirectory(BrowserRoot);
 		Process.Start(new ProcessStartInfo("explorer.exe", "\"" + BrowserRoot + "\"")
@@ -105,7 +105,7 @@ public sealed class BrowserIntegrationInstaller
 		});
 	}
 
-	public void OpenExtensionPage(BrowserKind browser)
+	public static void OpenExtensionPage(BrowserKind browser)
 	{
 		(string, string) tuple = browser switch
 		{
@@ -135,7 +135,7 @@ public sealed class BrowserIntegrationInstaller
 		return DetectBrowser("msedge.exe", FirstExisting(Path.Combine(ProgramFilesX86(), "Microsoft", "Edge", "Application", "msedge.exe"), Path.Combine(ProgramFiles(), "Microsoft", "Edge", "Application", "msedge.exe")));
 	}
 
-	private void EnsureSources()
+	private static void EnsureSources()
 	{
 		// The file list lives in AppCore so that a net8.0 test can assert an incomplete
 		// payload is rejected; this WPF project is not reachable from the test projects.
@@ -164,7 +164,7 @@ public sealed class BrowserIntegrationInstaller
 		}
 	}
 
-	private void CleanupLegacyFirefox()
+	private static void CleanupLegacyFirefox()
 	{
 		DeleteRegistryKey("Software\\Mozilla\\NativeMessagingHosts\\com.potatodm.dm");
 		FileSystemHelpers.TryDeleteFile(LegacyFirefoxManifestPath);

@@ -194,7 +194,7 @@ public static class DashManifestParser
         return BuildFullFileSegments(representationBase);
     }
 
-    private static IReadOnlyList<MediaSegment> BuildTemplateSegments(
+    private static List<MediaSegment> BuildTemplateSegments(
         XElement mpd,
         XElement period,
         XElement adaptationSet,
@@ -269,7 +269,7 @@ public static class DashManifestParser
         return segments;
     }
 
-    private static IReadOnlyList<MediaSegment> BuildTimelineSegments(
+    private static List<MediaSegment> BuildTimelineSegments(
         string mediaTemplate,
         XElement timeline,
         string representationId,
@@ -318,7 +318,7 @@ public static class DashManifestParser
         return segments;
     }
 
-    private static IReadOnlyList<MediaSegment> BuildListSegments(XElement list, Uri representationBase)
+    private static List<MediaSegment> BuildListSegments(XElement list, Uri representationBase)
     {
         MediaInitialization? initialization = null;
         if (Children(list, "Initialization").FirstOrDefault() is { } init &&
@@ -347,7 +347,7 @@ public static class DashManifestParser
         return segments;
     }
 
-    private static IReadOnlyList<MediaSegment> BuildFullFileSegments(Uri representationBase)
+    private static MediaSegment[] BuildFullFileSegments(Uri representationBase)
     {
         if (!representationBase.IsAbsoluteUri)
         {

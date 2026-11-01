@@ -90,7 +90,7 @@ public static class FfmpegMuxer
                 "working ffmpeg executable.", ex);
         }
 
-        var stderrTask = process.StandardError.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
         try
         {
@@ -122,8 +122,8 @@ public static class FfmpegMuxer
     }
 
     private static bool HasDirectorySeparator(string path) =>
-        path.IndexOf(Path.DirectorySeparatorChar) >= 0 ||
-        path.IndexOf(Path.AltDirectorySeparatorChar) >= 0;
+        path.Contains(Path.DirectorySeparatorChar) ||
+        path.Contains(Path.AltDirectorySeparatorChar);
 
     private static string? SearchPathFor(string name)
     {
@@ -161,7 +161,7 @@ public static class FfmpegMuxer
         return null;
     }
 
-    private static IReadOnlyList<string> BuildArguments(
+    private static List<string> BuildArguments(
         string videoPath,
         string audioPath,
         string outputPath)

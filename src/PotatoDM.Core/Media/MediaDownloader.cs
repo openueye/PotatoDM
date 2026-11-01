@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using PotatoDM.Core.Exceptions;
@@ -17,7 +18,7 @@ namespace PotatoDM.Core.Media;
 /// and video tracks are muxed with ffmpeg when it is available; DRM-protected
 /// manifests are refused before any media request is made.
 /// </summary>
-public sealed class MediaDownloader
+public static class MediaDownloader
 {
     /// <summary>Cache directory suffix used beside the target file.</summary>
     public const string CacheSuffix = ".potatodm-media";
@@ -26,7 +27,7 @@ public sealed class MediaDownloader
     private const long MaxManifestBytes = 32L * 1024 * 1024;
     private const long MaxKeyBytes = 1024 * 1024;
 
-    public async Task<DownloadResult> DownloadAsync(
+    public static async Task<DownloadResult> DownloadAsync(
         HttpClient client,
         DownloadRequest request,
         ManifestKind kind,
@@ -180,7 +181,7 @@ public sealed class MediaDownloader
         extension.Equals(".webm", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<MediaSourcePlan> BuildHlsPlanAsync(
+    private static async Task<MediaSourcePlan> BuildHlsPlanAsync(
         HttpClient client,
         Uri manifestUri,
         RequestOptions requestOptions,
@@ -243,7 +244,7 @@ public sealed class MediaDownloader
         };
     }
 
-    private async Task<MediaSourcePlan> BuildDashPlanAsync(
+    private static async Task<MediaSourcePlan> BuildDashPlanAsync(
         HttpClient client,
         Uri manifestUri,
         RequestOptions requestOptions,
@@ -255,7 +256,7 @@ public sealed class MediaDownloader
         return DashManifestParser.Parse(text, manifestUri);
     }
 
-    private async Task<HlsResolvedPlaylist> ResolveHlsMediaAsync(
+    private static async Task<HlsResolvedPlaylist> ResolveHlsMediaAsync(
         HttpClient client,
         Uri playlistUri,
         RequestOptions requestOptions,
@@ -410,7 +411,7 @@ public sealed class MediaDownloader
             ? ".webm"
             : ".mp4";
 
-    private async Task FetchKeysAsync(
+    private static async Task FetchKeysAsync(
         HttpClient client,
         MediaSourcePlan plan,
         RequestOptions requestOptions,
@@ -683,9 +684,11 @@ public sealed class MediaDownloader
 
                 EnsureIdentityEncoding(response);
 
-                await using var body = await response.Content
+                var body = await response.Content
                     .ReadAsStreamAsync(cancellationToken)
                     .ConfigureAwait(false);
+
+                await using var bodyScope = body.ConfigureAwait(false);
 
                 var skip = job.Range is { } requested && response.StatusCode == HttpStatusCode.OK
                     ? requested.Offset
@@ -694,13 +697,15 @@ public sealed class MediaDownloader
 
                 using var bounded = new BoundedReadStream(body, skip, limit);
 
-                await using (var output = new FileStream(
-                                 temporary,
-                                 FileMode.Create,
-                                 FileAccess.Write,
-                                 FileShare.None,
-                                 BufferSize,
-                                 FileOptions.Asynchronous | FileOptions.SequentialScan))
+                var output = new FileStream(
+                    temporary,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    BufferSize,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                await using (output.ConfigureAwait(false))
                 {
                     var key = job.Key is { Uri: { } keyUri } ? keys[keyUri.AbsoluteUri] : null;
 
@@ -724,11 +729,13 @@ public sealed class MediaDownloader
                         aes.Mode = CipherMode.CBC;
                         aes.Padding = PaddingMode.PKCS7;
 
-                        await using var decrypting = new CryptoStream(
+                        var decrypting = new CryptoStream(
                             bounded,
                             aes.CreateDecryptor(),
                             CryptoStreamMode.Read,
                             leaveOpen: true);
+
+                        await using var decryptingScope = decrypting.ConfigureAwait(false);
 
                         await CopyWithProgressAsync(
                                 decrypting,
@@ -819,7 +826,8 @@ public sealed class MediaDownloader
     {
         var working = WorkingPathFor(targetPath, processDirectory);
 
-        await using (var output = OpenWorkingOutput(working))
+        var output = OpenWorkingOutput(working);
+        await using (output.ConfigureAwait(false))
         {
             await AppendTrackAsync(track, output, cancellationToken).ConfigureAwait(false);
             await output.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -884,7 +892,8 @@ public sealed class MediaDownloader
         string path,
         CancellationToken cancellationToken)
     {
-        await using var output = OpenWorkingOutput(path);
+        var output = OpenWorkingOutput(path);
+        await using var outputScope = output.ConfigureAwait(false);
 
         await AppendTrackAsync(track, output, cancellationToken).ConfigureAwait(false);
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -927,7 +936,7 @@ public sealed class MediaDownloader
         byte[] buffer,
         CancellationToken cancellationToken)
     {
-        await using var input = new FileStream(
+        var input = new FileStream(
             path,
             FileMode.Open,
             FileAccess.Read,
@@ -935,6 +944,8 @@ public sealed class MediaDownloader
             FileShare.ReadWrite | FileShare.Delete,
             BufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        await using var inputScope = input.ConfigureAwait(false);
 
         while (true)
         {

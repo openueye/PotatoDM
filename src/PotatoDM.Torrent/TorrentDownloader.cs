@@ -18,11 +18,11 @@ namespace PotatoDM.Torrent;
 /// is kept only to perform the metadata exchange; the resulting .torrent is
 /// then transferred by libtorrent.
 /// </summary>
-public sealed class TorrentDownloader
+public static class TorrentDownloader
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
-    public async Task<TorrentDownloadResult> DownloadAsync(
+    public static async Task<TorrentDownloadResult> DownloadAsync(
         TorrentDownloadRequest request,
         Action<TorrentProgress>? onProgress,
         CancellationToken cancellationToken)

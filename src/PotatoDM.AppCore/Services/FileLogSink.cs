@@ -88,7 +88,7 @@ public sealed class FileLogSink : ILogSink
     /// Builds one entry. Returns null when scrubbing failed, in which case the
     /// entry is dropped rather than written uninspected.
     /// </summary>
-    private string? Compose(LogLevel level, string message, Exception? exception)
+    private static string? Compose(LogLevel level, string message, Exception? exception)
     {
         var safeMessage = LogScrubber.Redact(message);
         if (safeMessage is null)

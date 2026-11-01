@@ -537,7 +537,7 @@ public class DownloadIntegrationTests
     }
 
     [Fact]
-    public async Task Short_partial_responses_fail_after_retries()
+    public async Task Short_partial_responses_report_a_transient_failure_after_retries()
     {
         const long size = 1024;
         var token = IntegrationHelpers.NewToken();
@@ -551,8 +551,10 @@ public class DownloadIntegrationTests
         var error = await Assert.ThrowsAsync<HttpDownloadException>(() =>
             new DownloadEngine().DownloadAsync(request, IntegrationHelpers.Timeout(60)));
 
-        Assert.False(error.IsTransient);
-        Assert.Equal(DownloadExitCode.HttpPermanentFailure, error.ExitCode);
+        // A short read means the connection ended early, not that the server refused
+        // the request, so a caller should retry later rather than give up.
+        Assert.True(error.IsTransient);
+        Assert.Equal(DownloadExitCode.TransientFailure, error.ExitCode);
         Assert.False(File.Exists(target));
 
         var state = await new JsonDownloadStateStore()
@@ -560,6 +562,52 @@ public class DownloadIntegrationTests
 
         Assert.NotNull(state);
         Assert.Equal(JobStatus.Failed, state!.Status);
+    }
+
+    [Fact]
+    public async Task Retryable_statuses_report_a_transient_failure_after_retries()
+    {
+        const long size = 1024 * 1024;
+        var token = IntegrationHelpers.NewToken();
+        var url = new Uri(_server.Url($"/dl?token={token}&size={size}"));
+        using var temp = new TempDirectory();
+        var target = temp.FileFor("unavailable.bin");
+
+        await _server.ConfigureAsync(token, failSegments: 10, failStatus: 503);
+
+        var request = Request(
+            url, target, connections: 1, minSegmentSize: size, maxRetries: 1);
+
+        var error = await Assert.ThrowsAsync<HttpDownloadException>(() =>
+            new DownloadEngine().DownloadAsync(request, IntegrationHelpers.Timeout(60)));
+
+        Assert.True(error.IsTransient);
+        Assert.Equal(DownloadExitCode.TransientFailure, error.ExitCode);
+        Assert.False(File.Exists(target));
+    }
+
+    [Fact]
+    public async Task Protocol_violations_keep_the_permanent_failure_code_after_retries()
+    {
+        // Above MinBytesForSegmented (2 MiB) so the planner really splits; the second
+        // segment starts at a nonzero offset, which is what bad-start corrupts.
+        const long size = 4 * 1024 * 1024;
+        var token = IntegrationHelpers.NewToken();
+        var url = new Uri(_server.Url($"/dl?token={token}&size={size}&range=bad-start"));
+        using var temp = new TempDirectory();
+        var target = temp.FileFor("bad-start.bin");
+
+        var request = Request(
+            url, target, connections: 2, minSegmentSize: 1024 * 1024, maxRetries: 1);
+
+        var error = await Assert.ThrowsAsync<HttpDownloadException>(() =>
+            new DownloadEngine().DownloadAsync(request, IntegrationHelpers.Timeout(60)));
+
+        // The server answers with a Content-Range that starts one byte early. The same
+        // request will get the same contradiction, so retrying cannot help.
+        Assert.False(error.IsTransient);
+        Assert.Equal(DownloadExitCode.HttpPermanentFailure, error.ExitCode);
+        Assert.False(File.Exists(target));
     }
 
     private async Task<(string StatePath, JobState State)> StartAndCancelAsync(

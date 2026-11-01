@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Net;
+using System.Runtime.CompilerServices;
 using PotatoDM.Core.Exceptions;
 using PotatoDM.Core.Http;
 using PotatoDM.Core.Internal;
@@ -108,7 +109,7 @@ internal static class SegmentWorker
             {
                 throw new HttpDownloadException(
                     $"Segment {segment.Index} failed after {attempt} attempts.",
-                    isTransient: false,
+                    IsTransientRetryExhaustion(lastError),
                     lastError);
             }
 
@@ -160,9 +161,11 @@ internal static class SegmentWorker
                         throw new RangeIgnoredException();
                     }
 
-                    await using (var plainStream = await response.Content
-                                     .ReadAsStreamAsync(cancellationToken)
-                                     .ConfigureAwait(false))
+                    var plainStream = await response.Content
+                        .ReadAsStreamAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    await using (plainStream.ConfigureAwait(false))
                     {
                         await CopyResponseToFileAsync(
                                 plainStream,
@@ -178,7 +181,8 @@ internal static class SegmentWorker
                     if (!segment.IsComplete)
                     {
                         throw new UnexpectedRangeResponseException(
-                            "The connection ended before the resource was complete.");
+                            "The connection ended before the resource was complete.",
+                            isTransient: true);
                     }
 
                     return;
@@ -187,9 +191,11 @@ internal static class SegmentWorker
                 {
                     ValidatePartialResponse(runtime, response, startOffset);
 
-                    await using var stream = await response.Content
+                    var stream = await response.Content
                         .ReadAsStreamAsync(cancellationToken)
                         .ConfigureAwait(false);
+
+                    await using var streamScope = stream.ConfigureAwait(false);
 
                     await CopyResponseToFileAsync(
                             stream,
@@ -204,7 +210,8 @@ internal static class SegmentWorker
                     if (!segment.IsComplete)
                     {
                         throw new UnexpectedRangeResponseException(
-                            "The connection ended before the segment was complete.");
+                            "The connection ended before the segment was complete.",
+                            isTransient: true);
                     }
 
                     return;
@@ -217,7 +224,8 @@ internal static class SegmentWorker
                     }
 
                     throw new UnexpectedRangeResponseException(
-                        "Server returned 416 while bytes remain in the segment.");
+                        "Server returned 416 while bytes remain in the segment.",
+                        isTransient: false);
 
                 default:
                     if (RetryPolicy.IsRetryableStatus(response.StatusCode))
@@ -244,7 +252,8 @@ internal static class SegmentWorker
         if (!ContentRangeParser.TryParse(header, out var range) || range.Start != expectedStart)
         {
             throw new UnexpectedRangeResponseException(
-                $"Expected a Content-Range starting at {expectedStart}, got '{header ?? "<none>"}'.");
+                $"Expected a Content-Range starting at {expectedStart}, got '{header ?? "<none>"}'.",
+                isTransient: false);
         }
 
         if (range.TotalLength is { } total && total != runtime.State.TotalLength)
@@ -354,6 +363,18 @@ internal static class SegmentWorker
         HttpRequestException or
         IOException or
         TaskCanceledException;
+
+    /// <summary>
+    /// Classifies a failure that survived every retry.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to transient. A false "try again later" costs the caller a few extra
+    /// attempts; a false "give up" makes a script abandon a download that would have
+    /// succeeded minutes later. Only a deterministic protocol contradiction earns
+    /// the permanent code, and each throw site states which kind it is.
+    /// </remarks>
+    internal static bool IsTransientRetryExhaustion(Exception? error) =>
+        error is not UnexpectedRangeResponseException { IsTransient: false };
 
     private static void EnsureIdentityEncoding(HttpResponseMessage response)
     {

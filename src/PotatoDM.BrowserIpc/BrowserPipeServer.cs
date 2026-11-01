@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
@@ -77,56 +78,74 @@ public sealed class BrowserPipeServer : IAsyncDisposable
         _stop.Dispose();
     }
 
+    // The analyzer cannot follow the hand-off: the connection task owns the stream
+    // and disposes it in an await using, while the finally here covers only the
+    // failure paths that happen before that hand-off.
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Ownership is transferred to HandleConnectionAsync, which disposes " +
+                        "the stream; the finally block covers every pre-hand-off failure.")]
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            NamedPipeServerStream server;
+            NamedPipeServerStream? server = null;
 
             try
             {
-                server = new NamedPipeServerStream(
-                    _pipeName,
-                    PipeDirection.InOut,
-                    _maxConnections,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            }
-            catch (IOException)
-            {
-                // All instances are currently connected; back off briefly.
                 try
                 {
-                    await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                    server = new NamedPipeServerStream(
+                        _pipeName,
+                        PipeDirection.InOut,
+                        _maxConnections,
+                        PipeTransmissionMode.Byte,
+                        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 }
-                catch (OperationCanceledException)
+                catch (IOException)
+                {
+                    // All instances are currently connected; back off briefly.
+                    try
+                    {
+                        await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+                catch (UnauthorizedAccessException)
                 {
                     break;
                 }
 
-                continue;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                break;
-            }
-
-            try
-            {
                 await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+                // The connection task owns the stream and disposes it; clearing the
+                // local records that hand-off so the finally block cannot
+                // double-dispose it.
+                var connection = server;
+                server = null;
+                _ = HandleConnectionAsync(connection, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                await server.DisposeAsync().ConfigureAwait(false);
                 break;
             }
             catch (IOException)
             {
-                await server.DisposeAsync().ConfigureAwait(false);
                 continue;
             }
-
-            _ = HandleConnectionAsync(server, cancellationToken);
+            finally
+            {
+                if (server is not null)
+                {
+                    await server.DisposeAsync().ConfigureAwait(false);
+                }
+            }
         }
     }
 

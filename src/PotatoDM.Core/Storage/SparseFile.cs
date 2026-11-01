@@ -67,6 +67,9 @@ public static class SparseFile
         }
     }
 
+    // System32 only: the default search order would also probe the application
+    // directory, where a planted kernel32.dll would be loaded instead.
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DeviceIoControl(
@@ -79,6 +82,7 @@ public static class SparseFile
         out uint lpBytesReturned,
         IntPtr lpOverlapped);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetCompressedFileSize(string lpFileName, out uint lpFileSizeHigh);
 }

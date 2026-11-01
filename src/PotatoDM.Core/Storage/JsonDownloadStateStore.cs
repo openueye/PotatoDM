@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PotatoDM.Core.Diagnostics;
@@ -93,13 +94,15 @@ public sealed class JsonDownloadStateStore : IDownloadStateStore
                 Directory.CreateDirectory(directory);
             }
 
-            await using (var stream = new FileStream(
-                             temporaryPath,
-                             FileMode.Create,
-                             FileAccess.Write,
-                             FileShare.None,
-                             64 * 1024,
-                             FileOptions.Asynchronous))
+            var stream = new FileStream(
+                temporaryPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                64 * 1024,
+                FileOptions.Asynchronous);
+
+            await using (stream.ConfigureAwait(false))
             {
                 await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);

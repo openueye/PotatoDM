@@ -23,10 +23,19 @@ internal sealed class StallTimeoutException : Exception
 /// <summary>A response whose status or byte range violates the protocol contract; retried.</summary>
 internal sealed class UnexpectedRangeResponseException : Exception
 {
-    public UnexpectedRangeResponseException(string message)
+    public UnexpectedRangeResponseException(string message, bool isTransient)
         : base(message)
     {
+        IsTransient = isTransient;
     }
+
+    /// <summary>
+    /// Whether the failure can plausibly clear on its own. A short read means the
+    /// connection ended early, so it is transient; a 416 with bytes remaining or a
+    /// Content-Range that starts somewhere else is the server contradicting the
+    /// protocol, so retrying the same request cannot help.
+    /// </summary>
+    public bool IsTransient { get; }
 }
 
 /// <summary>A retryable HTTP status with an optional Retry-After hint.</summary>

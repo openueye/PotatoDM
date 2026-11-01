@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
@@ -10,6 +11,12 @@ using PotatoDM.Core.Diagnostics;
 
 namespace PotatoDM.App;
 
+// WPF owns the Application lifetime and has no disposal hook; OnExit releases
+// these fields explicitly, so there is no path on which Dispose could be called.
+[SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "Released in OnExit; Application has no disposal hook.")]
 public partial class App : System.Windows.Application
 {
     private const string MutexName = @"Local\PotatoDM.SingleInstance.v1";

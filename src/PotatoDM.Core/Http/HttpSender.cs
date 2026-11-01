@@ -24,54 +24,83 @@ public static class HttpSender
             .ToArray();
 
         var current = request;
-        for (var redirects = 0; ; redirects++)
+        var ownsCurrent = false;
+
+        // The hop being built. It only leaves this method's ownership when the
+        // request has been sent and the loop moves on to the next redirect.
+        HttpRequestMessage? pending = null;
+
+        try
         {
-            var response = await client
-                .SendAsync(current, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (!IsRedirect(response.StatusCode))
+            for (var redirects = 0; ; redirects++)
             {
-                return (response, uri);
-            }
+                var response = await client
+                    .SendAsync(current, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false);
 
-            if (redirects >= MaxRedirects)
-            {
-                response.Dispose();
-                throw new HttpDownloadException("Too many redirects (limit 10).", isTransient: false);
-            }
-
-            var location = response.Headers.Location;
-            response.Dispose();
-
-            if (location is null)
-            {
-                throw new HttpDownloadException("Redirect response did not include a Location header.",
-                    isTransient: false);
-            }
-
-            var previousUri = uri;
-            uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
-
-            // Cookies and credentials must not follow a cross-origin redirect.
-            var sameOrigin = string.Equals(
-                                 previousUri.Scheme, uri.Scheme, StringComparison.OrdinalIgnoreCase) &&
-                             string.Equals(
-                                 previousUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase) &&
-                             previousUri.Port == uri.Port;
-
-            var next = new HttpRequestMessage(method, uri);
-            foreach (var header in headers)
-            {
-                if (!sameOrigin && IsSensitiveHeader(header.Key))
+                if (!IsRedirect(response.StatusCode))
                 {
-                    continue;
+                    return (response, uri);
                 }
 
-                next.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
+                if (redirects >= MaxRedirects)
+                {
+                    response.Dispose();
+                    throw new HttpDownloadException("Too many redirects (limit 10).", isTransient: false);
+                }
 
-            current = next;
+                var location = response.Headers.Location;
+                response.Dispose();
+
+                if (location is null)
+                {
+                    throw new HttpDownloadException("Redirect response did not include a Location header.",
+                        isTransient: false);
+                }
+
+                var previousUri = uri;
+                uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
+
+                // Cookies and credentials must not follow a cross-origin redirect.
+                var sameOrigin = string.Equals(
+                                     previousUri.Scheme, uri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                                 string.Equals(
+                                     previousUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase) &&
+                                 previousUri.Port == uri.Port;
+
+                pending = new HttpRequestMessage(method, uri);
+                foreach (var header in headers)
+                {
+                    if (!sameOrigin && IsSensitiveHeader(header.Key))
+                    {
+                        continue;
+                    }
+
+                    pending.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+
+                // The caller owns the request it passed in; every hop this method
+                // builds is ours to release once SendAsync has finished with it.
+                if (ownsCurrent)
+                {
+                    current.Dispose();
+                }
+
+                current = pending;
+                pending = null;
+                ownsCurrent = true;
+            }
+        }
+        finally
+        {
+            // A hop that was built but never handed to SendAsync (for example a
+            // header copy that throws) is still ours.
+            pending?.Dispose();
+
+            if (ownsCurrent)
+            {
+                current.Dispose();
+            }
         }
     }
 

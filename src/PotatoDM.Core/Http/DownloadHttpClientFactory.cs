@@ -21,7 +21,7 @@ public static class DownloadHttpClientFactory
             }
         }
 
-        var handler = new SocketsHttpHandler
+        SocketsHttpHandler? handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.None,
@@ -33,15 +33,26 @@ public static class DownloadHttpClientFactory
             MaxConnectionsPerServer = 64,
         };
 
-        var client = new HttpClient(handler, disposeHandler: true)
+        try
         {
-            Timeout = Timeout.InfiniteTimeSpan,
-            DefaultRequestVersion = HttpVersion.Version11,
-            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
-        };
+            var client = new HttpClient(handler, disposeHandler: true)
+            {
+                Timeout = Timeout.InfiniteTimeSpan,
+                DefaultRequestVersion = HttpVersion.Version11,
+                DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
+            };
 
-        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", options.UserAgent);
-        return client;
+            // HttpClient owns the handler once it has accepted it; clearing the
+            // field keeps the finally block from disposing it a second time.
+            handler = null;
+
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", options.UserAgent);
+            return client;
+        }
+        finally
+        {
+            handler?.Dispose();
+        }
     }
 
     private static void TryAddCookie(CookieContainer container, RequestCookie source)

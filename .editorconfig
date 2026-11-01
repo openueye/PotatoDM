@@ -12,3 +12,20 @@ indent_size = 4
 [*.{json,csproj,props,xml}]
 indent_style = space
 indent_size = 2
+
+# --- Analyzer policy ---------------------------------------------------------
+# Directory.Build.props turns on Recommended mode for shipped code (src/); the
+# tests/ props file switches analyzers back off for test projects.
+# These rules are not part of Recommended but matter here:
+[src/**]
+# P/Invoke without an explicit search path can load a planted kernel32.dll.
+dotnet_diagnostic.CA5392.severity = warning
+# Dispose objects before losing scope.
+dotnet_diagnostic.CA2000.severity = warning
+# Dead conditional code.
+dotnet_diagnostic.CA1508.severity = warning
+
+# ConfigureAwait(false) matters in the library, which is awaited from the WPF UI
+# thread. The App layer must resume on the UI thread, so the rule stays off there.
+[src/PotatoDM.Core/**]
+dotnet_diagnostic.CA2007.severity = warning

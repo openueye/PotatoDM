@@ -54,17 +54,23 @@ public static class Aes128Cbc
         ArgumentNullException.ThrowIfNull(ciphertext);
         ValidateKeyAndIv(key, iv);
 
-        var aes = CreateAes(key, iv);
-        ICryptoTransform? decryptor = null;
-        try
+        ICryptoTransform decryptor;
+
+        // CreateDecryptor copies the key schedule into the transform, so the Aes
+        // instance is not needed after this block and must not be leaked on the
+        // success path (the CryptoStream owns the transform, not the Aes).
+        using (var aes = CreateAes(key, iv))
         {
             decryptor = aes.CreateDecryptor();
+        }
+
+        try
+        {
             return new CryptoStream(ciphertext, decryptor, CryptoStreamMode.Read, leaveOpen: false);
         }
         catch
         {
-            decryptor?.Dispose();
-            aes.Dispose();
+            decryptor.Dispose();
             throw;
         }
     }
