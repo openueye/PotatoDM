@@ -88,6 +88,24 @@ tests/
   PotatoDM.IntegrationTests/       # loopback 集成测试（含真实子进程与宿主进程）
 ```
 
+### 代码职责与维护约定
+
+- `AppCore/Job/DownloadManager.cs`：构造、手动添加、暂停/继续与移除入口。
+  同名分部文件中，`Browser` 负责接管与请求去重，`Queue` 负责并发排队，
+  `Transfers` 负责执行与进度，`Persistence` 负责恢复、Cookie 保护与合并保存，
+  `Files` 负责路径预留和产物清理。
+- `Core/Transfer/DownloadEngine.cs`：探测、新建与续传；`DownloadEngine.Workers.cs`
+  负责工作线程、动态分段与状态快照；`DownloadValidation.cs` 集中校验请求和分段状态。
+- `Core/Media/MediaDownloader.cs`：媒体下载流程；`MediaManifestLoader.cs` 负责清单加载
+  和音视频轨选择；`MediaHttp.cs` 负责 HTTP 响应校验及重试判定；分部文件 `Transfer`
+  负责密钥、分片和进度，`Output` 负责缓存和合并；`BoundedReadStream.cs` 负责限长读取。
+
+分部文件保留同一个实例和同步锁，避免为拆文件额外增加对象生命周期与接口。
+新增逻辑放入对应职责文件；可独立于任务状态工作的逻辑使用内部类型。
+整理代码时保持公开 API、取消行为、持久化顺序与续传数据不变。
+验证命令：`dotnet build PotatoDM.sln -c Release --no-incremental`、
+`dotnet test PotatoDM.sln -c Release --no-build`，以及在 `browser/` 下运行 `npm test`。
+
 ## 构建与测试
 
 需要 .NET SDK 8.0.x。
