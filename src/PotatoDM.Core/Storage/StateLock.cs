@@ -30,6 +30,10 @@ public sealed class StateLock : IDisposable
                 lockPath,
                 FileMode.OpenOrCreate,
                 FileAccess.ReadWrite,
+                // Deliberately FileShare.None, unlike the working-file handles: this
+                // handle IS the mutex. Allowing FileShare.Delete would let another
+                // process delete the lock file out from under us and create a fresh
+                // one, so two processes could drive the same job.
                 FileShare.None);
             return new StateLock(stream);
         }

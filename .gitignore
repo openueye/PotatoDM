@@ -7,11 +7,13 @@ TestResults/
 *.download.json
 *.download.json.bak
 *.download.json.tmp
+*.download.json.lock
 *.potatodm-part
-*.potatodm-part.lock
 *.potatodm-media
 .potatodm/
 .potatodm-torrent-cache
+*.potatodm-write-*.tmp
 *.torrent
+!tests/**/*.torrent
 /.workbuddy/
 publish/

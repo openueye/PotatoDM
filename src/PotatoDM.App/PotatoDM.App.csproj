@@ -42,6 +42,33 @@
     </Content>
   </ItemGroup>
 
+  <!-- Compliance: every release artifact must carry the project license, the
+       third-party notices and the full license texts they reference. Apache-2.0
+       §4(a) requires delivering a copy of the License to each recipient, so
+       "see the website" is not an acceptable substitute. -->
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Link="LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\..\LICENSES\Apache-2.0.txt" Link="LICENSES\Apache-2.0.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\..\LICENSES\BSD-3-Clause.txt" Link="LICENSES\BSD-3-Clause.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\..\LICENSES\MIT.txt" Link="LICENSES\MIT.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
   <Target Name="CopyBrowserHost" AfterTargets="Build">
     <ItemGroup>
       <BrowserHostOutput Include="$(MSBuildThisFileDirectory)..\PotatoDM.BrowserHost\bin\$(Configuration)\net8.0\PotatoDM.BrowserHost.*" />
