@@ -6,6 +6,7 @@ using PotatoDM.AppCore.Job;
 using PotatoDM.AppCore.Models;
 using PotatoDM.AppCore.Services;
 using PotatoDM.BrowserIpc;
+using PotatoDM.Core.Diagnostics;
 
 namespace PotatoDM.App;
 
@@ -20,6 +21,7 @@ public partial class App : System.Windows.Application
     private MainWindow? _window;
     private CancellationTokenSource? _lifetime;
     private TrayIconService? _trayIcon;
+    private FileLogSink? _log;
     private bool _isExiting;
 
     public bool IsExiting => _isExiting;
@@ -41,14 +43,22 @@ public partial class App : System.Windows.Application
         try
         {
             _lifetime = new CancellationTokenSource();
+
+            // Startup failures keep going to startup.log (this sink is not up yet and
+            // must not depend on the settings file being readable). Everything that
+            // happens after the manager exists goes through this sink instead.
+            _log = new FileLogSink(AppPaths.LogsDirectory);
+            _log.Info($"PotatoDM {typeof(App).Assembly.GetName().Version} starting.");
+
             var settings = await _settingsStore.LoadAsync();
 
             _manager = new DownloadManager(
                 new DispatcherUiDispatcher(Dispatcher),
                 new JobRegistryStore(),
-                new DownloadEngineFactory(),
+                new DownloadEngineFactory(_log),
                 settings,
-                new DpapiCookieProtector());
+                new DpapiCookieProtector(),
+                log: _log);
 
             await _manager.InitializeAsync();
 

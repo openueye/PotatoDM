@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using PotatoDM.Core.Diagnostics;
 using PotatoDM.Core.Exceptions;
 using PotatoDM.Core.Models;
 
@@ -15,14 +16,29 @@ public sealed class JsonDownloadStateStore : IDownloadStateStore
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
+    private readonly ILogSink _log;
+
+    /// <param name="log">
+    /// Optional sink. Defaults to <see cref="NullLogSink"/> so every existing
+    /// construction site keeps working unchanged.
+    /// </param>
+    public JsonDownloadStateStore(ILogSink? log = null)
+    {
+        _log = log ?? NullLogSink.Instance;
+    }
+
     public async Task<JobState?> LoadAsync(string statePath, CancellationToken cancellationToken)
     {
         if (!File.Exists(statePath))
         {
             var orphanBackup = statePath + ".bak";
-            return File.Exists(orphanBackup)
-                ? await ReadValidatedAsync(orphanBackup, cancellationToken).ConfigureAwait(false)
-                : null;
+            if (File.Exists(orphanBackup))
+            {
+                _log.Debug($"State file '{statePath}' is gone; recovering from its backup.");
+                return await ReadValidatedAsync(orphanBackup, cancellationToken).ConfigureAwait(false);
+            }
+
+            return null;
         }
 
         try
@@ -34,6 +50,10 @@ public sealed class JsonDownloadStateStore : IDownloadStateStore
             var backupPath = statePath + ".bak";
             if (File.Exists(backupPath))
             {
+                _log.Warning(
+                    $"State file '{statePath}' is unreadable; falling back to '{backupPath}'.",
+                    ex);
+
                 try
                 {
                     return await ReadValidatedAsync(backupPath, cancellationToken).ConfigureAwait(false);
@@ -41,11 +61,16 @@ public sealed class JsonDownloadStateStore : IDownloadStateStore
                 catch (Exception backupFailure) when (
                     backupFailure is JsonException or NotSupportedException or InvalidDataException)
                 {
+                    _log.Error(
+                        $"Both '{statePath}' and its backup are unreadable; the job cannot be resumed.",
+                        backupFailure);
+
                     throw new StateException(
                         $"Both '{statePath}' and its backup are corrupt.", backupFailure);
                 }
             }
 
+            _log.Warning($"State file '{statePath}' is unreadable and has no backup.", ex);
             throw new StateException($"State file '{statePath}' is corrupt.", ex);
         }
         catch (IOException ex)

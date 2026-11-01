@@ -27,9 +27,16 @@
                     <ComboBox x:Name="ConnectionsBox" Width="100"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                    <TextBlock Text="同时下载任务数" Width="110" VerticalAlignment="Center"/>
+                    <TextBlock Text="同时下载任务数" Width="120" VerticalAlignment="Center"/>
                     <ComboBox x:Name="JobLimitBox" Width="100"/>
                     <TextBlock Text="个（其余排队）" Margin="8,0,0,0"
+                               VerticalAlignment="Center" Foreground="#5B6573"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <TextBlock Text="每任务最大连接数" Width="120" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="PerJobLimitBox" Width="100"
+                              ToolTip="单个任务同时建立的连接上限，与「连接数」取较小者。这是单任务上限，不是整个程序的连接总数。"/>
+                    <TextBlock Text="条（单任务上限）" Margin="8,0,0,0"
                                VerticalAlignment="Center" Foreground="#5B6573"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,14,0,0">

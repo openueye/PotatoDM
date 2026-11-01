@@ -9,6 +9,9 @@ public static class AppPaths
 
     public static string SettingsFile => Path.Combine(Root, "settings.json");
 
+    /// <summary>Directory that receives the daily <c>potatodm-yyyyMMdd.log</c> files.</summary>
+    public static string LogsDirectory => Path.Combine(Root, "logs");
+
     public static string DefaultDownloadFolder
     {
         get

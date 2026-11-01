@@ -135,7 +135,7 @@ public static class CliApp
 
 	private static readonly HashSet<string> ValueOptions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 	{
-		"output", "connections", "min-segment-size", "state", "stall-timeout", "max-retries", "max-retry-delay", "max-per-host", "global-connections", "max-speed",
+		"output", "connections", "min-segment-size", "state", "stall-timeout", "max-retries", "max-retry-delay", "max-per-host", "max-connections-per-job", "global-connections", "max-speed",
 		"referer", "cookie", "user-agent", "ffmpeg", "port", "max-upload"
 	};
 
@@ -279,7 +279,7 @@ public static class CliApp
 			MaxRetries = parsed.GetInt("max-retries", 5),
 			MaxRetryDelay = TimeSpan.FromSeconds(parsed.GetInt("max-retry-delay", 30)),
 			MaxConnectionsPerHost = parsed.GetInt("max-per-host", 8),
-			MaxGlobalConnections = parsed.GetInt("global-connections", 32),
+			MaxConnectionsPerJob = PerJobConnections(parsed),
 			BandwidthLimiter = CreateBandwidthLimiter(parsed),
 			RequestOptions = BuildRequestOptions(parsed)
 		};
@@ -308,7 +308,7 @@ public static class CliApp
 			MaxRetries = parsed.GetInt("max-retries", 5),
 			MaxRetryDelay = TimeSpan.FromSeconds(parsed.GetInt("max-retry-delay", 30)),
 			MaxConnectionsPerHost = parsed.GetInt("max-per-host", 8),
-			MaxGlobalConnections = parsed.GetInt("global-connections", 32),
+			MaxConnectionsPerJob = PerJobConnections(parsed),
 			BandwidthLimiter = CreateBandwidthLimiter(parsed),
 			RequestOptions = BuildRequestOptions(parsed)
 		};
@@ -444,6 +444,17 @@ public static class CliApp
 		};
 	}
 
+	/// <summary>
+	/// Reads the per-job connection ceiling. <c>--global-connections</c> is still
+	/// accepted because the old name appeared in this tool's usage text and in
+	/// scripts; it never meant "process-wide", so mapping it here keeps both
+	/// names pointing at the same, honestly-named setting.
+	/// </summary>
+	private static int PerJobConnections(ParsedArguments parsed)
+	{
+		return parsed.GetInt("max-connections-per-job", parsed.GetInt("global-connections", 64));
+	}
+
 	private static BandwidthLimiter? CreateBandwidthLimiter(ParsedArguments parsed)
 	{
 		long num = parsed.GetLong("max-speed", 0L);
@@ -546,7 +557,9 @@ public static class CliApp
 		Console.Out.WriteLine("      --stall-timeout <sec>      No-data timeout (default 30)");
 		Console.Out.WriteLine("      --max-retries <n>          Retries per segment (default 5)");
 		Console.Out.WriteLine("      --max-per-host <n>         Per-host connection cap (default 8)");
-		Console.Out.WriteLine("      --global-connections <n>   Global connection cap (default 32)");
+		Console.Out.WriteLine("      --max-connections-per-job <n>");
+		Console.Out.WriteLine("                                 Connections one job may hold at once (default 64)");
+		Console.Out.WriteLine("      --global-connections <n>   Deprecated alias for --max-connections-per-job");
 		Console.Out.WriteLine("      --max-speed <bytes/s>      Bandwidth cap (default unlimited)");
 		Console.Out.WriteLine("      --referer <url>            Referer header");
 		Console.Out.WriteLine("      --cookie <value>           Cookie header");

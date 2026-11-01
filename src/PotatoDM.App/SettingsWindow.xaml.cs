@@ -30,6 +30,20 @@ public partial class SettingsWindow : Window
         JobLimitBox.ItemsSource = jobLimits;
         JobLimitBox.SelectedItem = currentJobLimit;
 
+        var perJobLimits = new List<int> { 1, 2, 4, 8, 16, 32, AppSettings.MaxConnectionsPerJobCeiling };
+        var currentPerJobLimit = Math.Clamp(
+            settings.MaxConnectionsPerJob,
+            1,
+            AppSettings.MaxConnectionsPerJobCeiling);
+        if (!perJobLimits.Contains(currentPerJobLimit))
+        {
+            perJobLimits.Add(currentPerJobLimit);
+            perJobLimits.Sort();
+        }
+
+        PerJobLimitBox.ItemsSource = perJobLimits;
+        PerJobLimitBox.SelectedItem = currentPerJobLimit;
+
         SpeedLimitBox.Text = ((settings.MaxBytesPerSecond + 512) / 1024)
             .ToString(CultureInfo.InvariantCulture);
         AutomaticBox.IsChecked = settings.AutomaticConnections;
@@ -87,6 +101,9 @@ public partial class SettingsWindow : Window
         _settings.AutomaticConnections = AutomaticBox.IsChecked == true;
         _settings.Connections = ConnectionsBox.SelectedItem is int value ? value : 8;
         _settings.MaxConcurrentJobs = JobLimitBox.SelectedItem is int limit ? limit : 3;
+        _settings.MaxConnectionsPerJob = PerJobLimitBox.SelectedItem is int perJobLimit
+            ? perJobLimit
+            : AppSettings.MaxConnectionsPerJobCeiling;
         _settings.MaxBytesPerSecond = speedLimitKib * 1024;
         _settings.DynamicSegmentation = DynamicSegmentsBox.IsChecked == true;
         _settings.SparseWorkingFile = SparseFileBox.IsChecked == true;

@@ -35,7 +35,13 @@ public sealed class DownloadRequest
 
     public int MaxConnectionsPerHost { get; init; } = 8;
 
-    public int MaxGlobalConnections { get; init; } = 32;
+    /// <summary>
+    /// Ceiling on the connections this one job may hold at the same time,
+    /// regardless of <see cref="Connections"/>. It is a per-job cap, not a
+    /// process-wide one: three concurrent jobs may each use this many
+    /// connections. See <see cref="ResumeOptions.MaxConnectionsPerJob"/>.
+    /// </summary>
+    public int MaxConnectionsPerJob { get; init; } = 64;
 
     /// <summary>
     /// Optional shared pacer. Pass the same instance to every concurrent job to

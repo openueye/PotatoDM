@@ -1,3 +1,4 @@
+using PotatoDM.Core.Diagnostics;
 using PotatoDM.Core.Exceptions;
 
 namespace PotatoDM.Core.Storage;
@@ -15,7 +16,13 @@ public sealed class StateLock : IDisposable
         _stream = stream;
     }
 
-    public static StateLock Acquire(string statePath)
+    /// <param name="statePath">Path of the sidecar whose job this lock protects.</param>
+    /// <param name="log">
+    /// Optional sink. Contention is logged at Debug: a second process driving the
+    /// same job is a real event worth seeing, but it is the expected outcome of
+    /// double-clicking a sidecar, not a fault.
+    /// </param>
+    public static StateLock Acquire(string statePath, ILogSink? log = null)
     {
         var lockPath = statePath + ".lock";
         var directory = Path.GetDirectoryName(lockPath);
@@ -39,11 +46,15 @@ public sealed class StateLock : IDisposable
         }
         catch (IOException ex)
         {
+            log.Debug($"State lock '{lockPath}' is held by another process.", ex);
+
             throw new JobAlreadyRunningException(
                 $"Another process is already working on '{statePath}'.", ex);
         }
         catch (UnauthorizedAccessException ex)
         {
+            log.Error($"Access denied creating the state lock for '{statePath}'.", ex);
+
             throw new FileAccessException($"Access denied creating lock for '{statePath}'.", ex);
         }
     }

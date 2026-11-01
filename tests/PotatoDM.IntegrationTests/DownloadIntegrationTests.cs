@@ -26,7 +26,7 @@ public class DownloadIntegrationTests
         long minSegmentSize = 1024 * 1024,
         int maxRetries = 3,
         int maxConnectionsPerHost = 8,
-        int maxGlobalConnections = 32,
+        int maxConnectionsPerJob = 64,
         TimeSpan? stallTimeout = null,
         IBandwidthLimiter? bandwidthLimiter = null,
         bool dynamicSegmentation = false)
@@ -40,7 +40,7 @@ public class DownloadIntegrationTests
             MaxRetries = maxRetries,
             MaxRetryDelay = TimeSpan.FromSeconds(2),
             MaxConnectionsPerHost = maxConnectionsPerHost,
-            MaxGlobalConnections = maxGlobalConnections,
+            MaxConnectionsPerJob = maxConnectionsPerJob,
             StallTimeout = stallTimeout ?? TimeSpan.FromSeconds(10),
             BandwidthLimiter = bandwidthLimiter,
             DynamicSegmentation = dynamicSegmentation,
@@ -57,7 +57,7 @@ public class DownloadIntegrationTests
             MaxRetryDelay = TimeSpan.FromSeconds(2),
             StallTimeout = TimeSpan.FromSeconds(10),
             MaxConnectionsPerHost = 8,
-            MaxGlobalConnections = 32,
+            MaxConnectionsPerJob = 64,
             RequestOptions = NoProxy,
         };
     }

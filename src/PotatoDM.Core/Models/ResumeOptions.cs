@@ -15,7 +15,13 @@ public sealed class ResumeOptions
 
     public int MaxConnectionsPerHost { get; init; } = 8;
 
-    public int MaxGlobalConnections { get; init; } = 32;
+    /// <summary>
+    /// Ceiling on the connections this one job may hold at the same time,
+    /// regardless of how the job was segmented. It is a per-job cap, not a
+    /// process-wide one; the process-wide knob only limits how many jobs run
+    /// at once, not how many connections they open.
+    /// </summary>
+    public int MaxConnectionsPerJob { get; init; } = 64;
 
     /// <summary>
     /// Let a connection that finishes early take over half of another in-flight

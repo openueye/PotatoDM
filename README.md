@@ -15,7 +15,7 @@
 - 重试与退避：408/429/5xx/网络异常，指数退避 + 抖动，`Retry-After` 优先
 - 停滞看门狗：长时间无数据自动断线重连，从最后成功偏移继续
 - 协议异常处理：Range 被忽略时自动降级单流、短 206、错误 `Content-Length`、强制 gzip 拒绝、Cookie 质询、重定向
-- 并发上限：每主机 / 单任务内的全局连接数限制
+- 并发上限：每主机上限 + 单任务连接上限（应用设置「每任务最大连接数」或 CLI `--max-connections-per-job`）
 - 动态段拆分（可选）：先下完的连接接过另一段尚未完成的尾部，单个慢响应不再拖住整个任务
 - 稀疏工作文件（可选）：`--sparse` 或应用设置，工作文件只占用已下载范围，适合超大文件
 - 全局限速：所有任务共享一个进程级带宽预算，应用设置或 CLI `--max-speed` 配置，0 表示不限
@@ -270,13 +270,13 @@ potatodm download <url> [-o PATH] [--connections N] [--min-segment-size BYTES]
                     [--max-speed BYTES] [--state PATH] [--restart] [--restart-on-change]
                     [--dynamic-segments] [--sparse] [--ffmpeg PATH]
                     [--stall-timeout SEC] [--max-retries N] [--max-retry-delay SEC]
-                    [--max-per-host N] [--global-connections N]
+                    [--max-per-host N] [--max-connections-per-job N]
                     [--referer URL] [--cookie STR] [--user-agent STR]
                     [--no-proxy] [--json] [--quiet]
 potatodm resume <state.json | working-file> [--restart-on-change]
               [--dynamic-segments] [--sparse] [--ffmpeg PATH] [--max-speed BYTES]
               [--stall-timeout SEC] [--max-retries N] [--max-retry-delay SEC]
-              [--max-per-host N] [--global-connections N]
+              [--max-per-host N] [--max-connections-per-job N]
               [--referer URL] [--cookie STR] [--user-agent STR]
               [--no-proxy] [--json] [--quiet]
 potatodm torrent <magnet | .torrent> [-o DIR] [--port N] [--max-speed BYTES]
@@ -288,7 +288,9 @@ potatodm torrent <magnet | .torrent> [-o DIR] [--port N] [--max-speed BYTES]
 `torrent` 命令（桌面客户端两者都接受）。`--sparse` 关闭预分配，只占用已写入范围。
 
 默认值：8 连接、最小段 1 MiB、低于 2 MiB 的文件单流、停滞 30 s、每段最多重试 5 次、
-每主机 8 连接、全局 32 连接、不限速、动态段拆分关闭。`--max-speed` 的单位是字节/秒，0 表示不限。
+每主机 8 连接、单任务最多 64 连接、不限速、动态段拆分关闭。`--max-speed` 的单位是字节/秒，0 表示不限。
+`--max-connections-per-job` 是**单个任务**的连接上限，与 `--connections` 取较小者；它不是进程级
+总连接数（进程级只限制同时运行的任务数）。`--global-connections` 是它的旧名，仍然接受。
 `--dynamic-segments` 让空闲连接接管慢段尾部；默认关闭以保持分段映射可预测。
 `-o` 既可以给文件名，也可以给目录（目录时使用服务器建议文件名，冲突时自动追加 `(1)` 等后缀）。
 

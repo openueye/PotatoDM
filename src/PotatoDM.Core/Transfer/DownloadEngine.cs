@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using PotatoDM.Core.Diagnostics;
 using PotatoDM.Core.Exceptions;
 using PotatoDM.Core.Http;
 using PotatoDM.Core.Internal;
@@ -18,13 +19,23 @@ public sealed class DownloadEngine : IDownloadEngine
     private readonly IDownloadStateStore _store;
     private readonly SegmentPlanner _planner;
     private readonly UrlProbe _probe;
+    private readonly ILogSink _log;
 
+    /// <param name="store">Sidecar store; defaults to a JSON store on disk.</param>
+    /// <param name="planner">Segment planner.</param>
+    /// <param name="probe">URL probe.</param>
+    /// <param name="log">
+    /// Optional sink, appended last so every existing call site keeps compiling.
+    /// Defaults to <see cref="NullLogSink"/>.
+    /// </param>
     public DownloadEngine(
         IDownloadStateStore? store = null,
         SegmentPlanner? planner = null,
-        UrlProbe? probe = null)
+        UrlProbe? probe = null,
+        ILogSink? log = null)
     {
-        _store = store ?? new JsonDownloadStateStore();
+        _log = log ?? NullLogSink.Instance;
+        _store = store ?? new JsonDownloadStateStore(_log);
         _planner = planner ?? new SegmentPlanner();
         _probe = probe ?? new UrlProbe();
     }
@@ -80,7 +91,7 @@ public sealed class DownloadEngine : IDownloadEngine
             ? StatePaths.WorkingFor(targetPath)
             : StatePaths.WorkingIn(processDirectory, targetPath);
 
-        using var stateLock = StateLock.Acquire(statePath);
+        using var stateLock = StateLock.Acquire(statePath, _log);
 
         if (request.Restart)
         {
@@ -129,7 +140,7 @@ public sealed class DownloadEngine : IDownloadEngine
         };
 
         using var limiter = new ConnectionLimiter(
-            request.MaxGlobalConnections,
+            request.MaxConnectionsPerJob,
             request.MaxConnectionsPerHost);
 
         var runtime = new JobRuntime
@@ -192,7 +203,7 @@ public sealed class DownloadEngine : IDownloadEngine
         ValidateResumeOptions(options);
 
         var statePath = StatePaths.ResolveStatePath(stateOrWorkingPath);
-        using var stateLock = StateLock.Acquire(statePath);
+        using var stateLock = StateLock.Acquire(statePath, _log);
 
         var state = await _store.LoadAsync(statePath, cancellationToken).ConfigureAwait(false)
                     ?? throw new StateException($"No state file found at '{statePath}'.");
@@ -288,7 +299,7 @@ public sealed class DownloadEngine : IDownloadEngine
         state.Status = JobStatus.Downloading;
 
         using var limiter = new ConnectionLimiter(
-            options.MaxGlobalConnections,
+            options.MaxConnectionsPerJob,
             options.MaxConnectionsPerHost);
 
         var runtime = new JobRuntime
@@ -612,9 +623,19 @@ public sealed class DownloadEngine : IDownloadEngine
                 .SaveAsync(runtime.StatePath, snapshot, CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // Progress snapshots are best effort; the failure path reports the real error.
+            // Best effort: the transfer keeps running because a stale snapshot only
+            // costs re-downloaded bytes after a crash. Logged at Warning because a
+            // sidecar that silently stops advancing looks exactly like a healthy
+            // download until the user closes the app and loses the progress.
+            if (_log.IsEnabled(LogLevel.Warning))
+            {
+                _log.Warning(
+                    $"Could not write the progress snapshot for '{runtime.StatePath}'; " +
+                    "progress since the last successful save may be re-downloaded.",
+                    ex);
+            }
         }
     }
 
@@ -630,9 +651,15 @@ public sealed class DownloadEngine : IDownloadEngine
         {
             handler(this, progress);
         }
-        catch
+        catch (Exception ex)
         {
-            // A faulty UI subscriber must never break the transfer.
+            // A faulty UI subscriber must never break the transfer. Debug, not
+            // Warning: progress fires four times a second, so a permanently broken
+            // subscriber would otherwise flood the log.
+            if (_log.IsEnabled(LogLevel.Debug))
+            {
+                _log.Debug("A ProgressChanged subscriber threw; the transfer continues.", ex);
+            }
         }
     }
 
@@ -648,8 +675,12 @@ public sealed class DownloadEngine : IDownloadEngine
         {
             handler(this, status);
         }
-        catch
+        catch (Exception ex)
         {
+            if (_log.IsEnabled(LogLevel.Debug))
+            {
+                _log.Debug($"A StateChanged subscriber threw for status {status}.", ex);
+            }
         }
     }
 
@@ -734,7 +765,7 @@ public sealed class DownloadEngine : IDownloadEngine
         ArgumentOutOfRangeException.ThrowIfLessThan(request.Connections, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(request.MinSegmentSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(request.MaxConnectionsPerHost, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(request.MaxGlobalConnections, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(request.MaxConnectionsPerJob, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(request.MaxRetries);
 
         if (request.StallTimeout <= TimeSpan.Zero)
@@ -747,7 +778,7 @@ public sealed class DownloadEngine : IDownloadEngine
     private static void ValidateResumeOptions(ResumeOptions options)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxConnectionsPerHost, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxGlobalConnections, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxConnectionsPerJob, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(options.MaxRetries);
 
         if (options.StallTimeout <= TimeSpan.Zero)

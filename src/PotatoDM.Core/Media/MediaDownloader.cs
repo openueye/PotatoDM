@@ -83,7 +83,7 @@ public sealed class MediaDownloader
         PrepareCache(cacheRoot, plan.Fingerprint, request.Restart);
 
         using var limiter = new ConnectionLimiter(
-            request.MaxGlobalConnections,
+            request.MaxConnectionsPerJob,
             request.MaxConnectionsPerHost);
 
         var progress = new ProgressAggregator(onProgress);

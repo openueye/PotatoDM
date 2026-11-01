@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Security;
 using System.Text.Json;
 using PotatoDM.AppCore.Models;
 using PotatoDM.AppCore.Services;
+using PotatoDM.Core.Diagnostics;
 using PotatoDM.Core.Exceptions;
 using PotatoDM.Core.Media;
 using PotatoDM.Torrent;
@@ -33,6 +35,8 @@ public sealed class DownloadManager
     private readonly ICookieProtector _cookieProtector;
     private readonly Func<string> _defaultFolder;
     private readonly TimeSpan _browserProbeTimeout;
+    private readonly TimeSpan _manualProbeTimeout;
+    private readonly ILogSink _log;
     private readonly Func<
         TorrentDownloadRequest,
         Action<TorrentProgress>?,
@@ -63,19 +67,26 @@ public sealed class DownloadManager
             TorrentDownloadRequest,
             Action<TorrentProgress>?,
             CancellationToken,
-            Task<TorrentDownloadResult>>? torrentDownloader = null)
+            Task<TorrentDownloadResult>>? torrentDownloader = null,
+        TimeSpan? manualProbeTimeout = null,
+        ILogSink? log = null)
     {
         _ui = ui ?? throw new ArgumentNullException(nameof(ui));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _engines = engines ?? throw new ArgumentNullException(nameof(engines));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _log = log ?? NullLogSink.Instance;
         // One instance for every job: the cap is process-wide, and the provider
         // picks up settings changes without recreating in-flight requests.
         _bandwidthLimiter = new BandwidthLimiter(() => _settings.MaxBytesPerSecond);
         _cookieProtector = cookieProtector ?? throw new ArgumentNullException(nameof(cookieProtector));
-        _stateStore = stateStore ?? new JsonDownloadStateStore();
+        _stateStore = stateStore ?? new JsonDownloadStateStore(_log);
         _defaultFolder = defaultFolder ?? (() => AppPaths.DefaultDownloadFolder);
         _browserProbeTimeout = browserProbeTimeout ?? TimeSpan.FromSeconds(8);
+        // Deliberately much longer than the browser probe: a manual URL may point at
+        // a slow or distant server, and a user who typed it can wait. The browser
+        // path keeps its short timeout because the browser is blocked on us.
+        _manualProbeTimeout = manualProbeTimeout ?? TimeSpan.FromSeconds(30);
         _torrentDownloader = torrentDownloader
             ?? ((request, progress, token) =>
                 new TorrentDownloader().DownloadAsync(request, progress, token));
@@ -155,6 +166,11 @@ public sealed class DownloadManager
 
         var probeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+        // Without this a server that accepts the connection and then never answers
+        // leaves the row stuck at "探测中" forever: HttpClient's own default is
+        // 100 seconds of *inactivity*, which a slow trickle of headers resets.
+        probeCts.CancelAfter(_manualProbeTimeout);
+
         lock (_sync)
         {
             _cancellations[job.Id] = probeCts;
@@ -207,13 +223,33 @@ public sealed class DownloadManager
             if (!IsRemoved(job.Id))
             {
                 CleanupAfterFailure(job);
-                PostFailure(job, "已取消。");
+
+                // Two very different outcomes share this exception type. Reporting a
+                // timeout as "已取消" would blame the user for a dead server, and a
+                // user cancel as "超时" would hide that the button did what it said.
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    PostFailure(job, "已取消。");
+                }
+                else
+                {
+                    _log.Warning(
+                        $"Manual probe of '{url}' timed out after " +
+                        $"{_manualProbeTimeout.TotalSeconds:0.#}s without a response.");
+
+                    PostFailure(
+                        job,
+                        "探测下载地址超时：" +
+                        $"{_manualProbeTimeout.TotalSeconds.ToString("0.#", CultureInfo.InvariantCulture)}" +
+                        " 秒内服务器没有响应。请检查网络或链接后重试。");
+                }
             }
         }
         catch (Exception ex)
         {
             if (!IsRemoved(job.Id))
             {
+                _log.Warning($"Manual probe of '{url}' failed.", ex);
                 CleanupAfterFailure(job);
                 PostFailure(job, ex.Message);
             }
@@ -391,6 +427,13 @@ public sealed class DownloadManager
 
             var cancelled = cancellationToken.IsCancellationRequested || IsRemoved(job.Id);
 
+            if (!cancelled)
+            {
+                _log.Debug(
+                    $"Browser probe of '{context.Url}' timed out after " +
+                    $"{_browserProbeTimeout.TotalSeconds:0.#}s; handing off to the browser.");
+            }
+
             return CacheBrowserResult(
                 context.RequestId,
                 cancelled
@@ -401,6 +444,7 @@ public sealed class DownloadManager
         }
         catch (Exception ex)
         {
+            _log.Debug($"Browser hand-off for '{context.Url}' fell back to the browser.", ex);
             CleanupAfterFailure(job);
             RemovePlaceholder(job);
             return CacheBrowserResult(context.RequestId, MapBrowserFailure(ex));
@@ -869,6 +913,7 @@ public sealed class DownloadManager
                 var options = new ResumeOptions
                 {
                     MaxConnectionsPerHost = _settings.MaxConnectionsPerHost,
+                    MaxConnectionsPerJob = _settings.MaxConnectionsPerJob,
                     BandwidthLimiter = _bandwidthLimiter,
                     DynamicSegmentation = _settings.DynamicSegmentation,
                     SparseWorkingFile = _settings.SparseWorkingFile,
@@ -888,6 +933,7 @@ public sealed class DownloadManager
                     ProcessDirectory = NullIfEmpty(job.ProcessDirectory),
                     Connections = connections,
                     MaxConnectionsPerHost = _settings.MaxConnectionsPerHost,
+                    MaxConnectionsPerJob = _settings.MaxConnectionsPerJob,
                     BandwidthLimiter = _bandwidthLimiter,
                     DynamicSegmentation = _settings.DynamicSegmentation,
                     SparseWorkingFile = _settings.SparseWorkingFile,
@@ -911,6 +957,9 @@ public sealed class DownloadManager
         }
         catch (Exception ex)
         {
+            // The UI only shows ex.Message. Without this the stack trace of a real
+            // transfer failure is lost the moment the message box appears.
+            _log.Error($"Download job '{job.Id}' ({job.Url}) failed.", ex);
             CleanupAfterTransferFailure(job);
             PostFailure(job, ex.Message);
         }
@@ -986,6 +1035,7 @@ public sealed class DownloadManager
         {
             // libtorrent re-hashes whatever is already on disk, so a failed torrent
             // is resumable too; keep its payload.
+            _log.Error($"Torrent job '{job.Id}' ({job.Url}) failed.", ex);
             CleanupAfterTransferFailure(job);
             PostFailure(job, ex.Message);
         }
@@ -1212,6 +1262,7 @@ public sealed class DownloadManager
             catch (Exception ex) when (
                 ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
+                _log.Debug($"Configured download folder '{preferred}' is not usable.", ex);
             }
         }
 
@@ -1225,11 +1276,12 @@ public sealed class DownloadManager
             ex is IOException or UnauthorizedAccessException or ArgumentException or
             NotSupportedException or PathTooLongException)
         {
+            _log.Debug("The fallback download folder is not usable.", ex);
             return null;
         }
     }
 
-    private static bool IsDirectoryWritable(string directory)
+    private bool IsDirectoryWritable(string directory)
     {
         try
         {
@@ -1245,8 +1297,9 @@ public sealed class DownloadManager
 
             return true;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _log.Debug($"Probe write to '{directory}' failed; the folder is treated as read-only.", ex);
             return false;
         }
     }
@@ -1355,9 +1408,11 @@ public sealed class DownloadManager
             var json = JsonSerializer.Serialize(cookies, CookieJsonOptions);
             return _cookieProtector.Protect(json);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Losing persisted cookies is better than failing the download.
+            // Losing persisted cookies is better than failing the download: the
+            // transfer itself already has them in memory. Degradation, not a fault.
+            _log.Debug("Cookies could not be protected; they will not survive a restart.", ex);
             return null;
         }
     }
@@ -1374,13 +1429,27 @@ public sealed class DownloadManager
             var json = _cookieProtector.Unprotect(protectedCookies);
             if (string.IsNullOrWhiteSpace(json))
             {
+                // The production protector reports failure by returning null rather
+                // than throwing, so this branch — not the catch below — is where a
+                // real DPAPI failure lands. Without it an undecryptable cookie blob
+                // is indistinguishable from "this job never had cookies", and the
+                // user just sees a 401/403 after a restart.
+                _log.Warning(
+                    "Stored cookies could not be decrypted for a restored job; " +
+                    "the download will run without them.");
+
                 return null;
             }
 
             return JsonSerializer.Deserialize<List<RequestCookie>>(json, CookieJsonOptions);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _log.Warning(
+                "Stored cookies could not be decrypted for a restored job; " +
+                "the download will run without them.",
+                ex);
+
             return null;
         }
     }
@@ -1535,14 +1604,17 @@ public sealed class DownloadManager
         {
             await _registry.SaveAsync(_records.ToList(), cancellationToken);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            _log.Warning("The job list could not be saved; it will be incomplete after a restart.", ex);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            _log.Warning("The job list could not be saved; it will be incomplete after a restart.", ex);
         }
         catch (OperationCanceledException)
         {
+            // Shutdown raced the save; the next session rewrites the registry anyway.
         }
     }
 
@@ -1561,7 +1633,7 @@ public sealed class DownloadManager
     /// Removes the process folder but keeps the finished file (if any). Used
     /// when a completed task is removed from the list.
     /// </summary>
-    private static void DeleteProcessArtifacts(DownloadJob job)
+    private void DeleteProcessArtifacts(DownloadJob job)
     {
         if (!string.IsNullOrEmpty(job.TaskDirectory))
         {
@@ -1574,7 +1646,7 @@ public sealed class DownloadManager
     }
 
     /// <summary>Removes the whole task folder, including any partial payload.</summary>
-    private static void DeleteTaskDirectory(DownloadJob job)
+    private void DeleteTaskDirectory(DownloadJob job)
     {
         if (!string.IsNullOrEmpty(job.TaskDirectory))
         {
@@ -1590,7 +1662,7 @@ public sealed class DownloadManager
     /// probe and registration failures, and records whose files are already gone.
     /// Transfer failures use <see cref="CleanupAfterTransferFailure"/> instead.
     /// </summary>
-    private static void CleanupAfterFailure(DownloadJob job)
+    private void CleanupAfterFailure(DownloadJob job)
     {
         if (!string.IsNullOrEmpty(job.TaskDirectory))
         {
@@ -1611,27 +1683,27 @@ public sealed class DownloadManager
     /// engine already knows how to continue from a failed job. Only per-attempt
     /// scratch files go.
     /// </summary>
-    private static void CleanupAfterTransferFailure(DownloadJob job)
+    private void CleanupAfterTransferFailure(DownloadJob job)
     {
         if (!string.IsNullOrEmpty(job.StatePath))
         {
             // Torn write from a crash mid-save; the real sidecar and its .bak are
             // authoritative and stay.
-            FileSystemHelpers.TryDeleteFile(job.StatePath + ".tmp");
+            FileSystemHelpers.TryDeleteFile(job.StatePath + ".tmp", _log);
         }
 
         job.StartOverOnResume = false;
     }
 
     /// <summary>Cleanup for records written before the per-task folder layout.</summary>
-    private static void DeleteLegacyArtifacts(DownloadJob job)
+    private void DeleteLegacyArtifacts(DownloadJob job)
     {
         if (!string.IsNullOrEmpty(job.StatePath))
         {
-            FileSystemHelpers.TryDeleteFile(job.StatePath);
-            FileSystemHelpers.TryDeleteFile(job.StatePath + ".bak");
-            FileSystemHelpers.TryDeleteFile(job.StatePath + ".tmp");
-            FileSystemHelpers.TryDeleteFile(job.StatePath + ".lock");
+            FileSystemHelpers.TryDeleteFile(job.StatePath, _log);
+            FileSystemHelpers.TryDeleteFile(job.StatePath + ".bak", _log);
+            FileSystemHelpers.TryDeleteFile(job.StatePath + ".tmp", _log);
+            FileSystemHelpers.TryDeleteFile(job.StatePath + ".lock", _log);
         }
 
         if (string.IsNullOrEmpty(job.TargetPath))
@@ -1639,7 +1711,7 @@ public sealed class DownloadManager
             return;
         }
 
-        FileSystemHelpers.TryDeleteFile(StatePaths.WorkingFor(job.TargetPath));
+        FileSystemHelpers.TryDeleteFile(StatePaths.WorkingFor(job.TargetPath), _log);
 
         if (job.IsMedia)
         {
@@ -1655,12 +1727,12 @@ public sealed class DownloadManager
             }
             else
             {
-                FileSystemHelpers.TryDeleteFile(job.TargetPath);
+                FileSystemHelpers.TryDeleteFile(job.TargetPath, _log);
             }
         }
     }
 
-    private static void DeleteDirectoryIfEmpty(string path)
+    private void DeleteDirectoryIfEmpty(string path)
     {
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
         {
@@ -1674,15 +1746,23 @@ public sealed class DownloadManager
                 Directory.Delete(path);
             }
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            _log.Debug($"Empty directory '{path}' could not be removed.", ex);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            _log.Debug($"Empty directory '{path}' could not be removed.", ex);
         }
     }
 
-    private static void DeleteDirectory(string path)
+    /// <summary>
+    /// Deletes a directory tree, retrying while a freshly closed handle still holds
+    /// the last file. The final attempt's failure is logged rather than dropped:
+    /// this is the difference between "the task folder is gone" and "gigabytes of
+    /// orphaned scratch data nobody will ever find".
+    /// </summary>
+    private void DeleteDirectory(string path)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -1703,6 +1783,11 @@ public sealed class DownloadManager
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                _log.Warning(
+                    $"Directory '{path}' could not be deleted after 5 attempts; " +
+                    "it is left on disk.",
+                    ex);
+
                 return;
             }
         }
@@ -1774,7 +1859,7 @@ public sealed class DownloadManager
         }
     }
 
-    private static long PayloadSize(string path)
+    private long PayloadSize(string path)
     {
         try
         {
@@ -1793,6 +1878,9 @@ public sealed class DownloadManager
         catch (Exception ex) when (
             ex is IOException or UnauthorizedAccessException or SecurityException)
         {
+            // Reporting 0 bytes makes a restored job look empty; the row is still
+            // resumable, so this is cosmetic degradation, not a failure.
+            _log.Debug($"Could not measure the payload at '{path}'; reporting 0 bytes.", ex);
         }
 
         return 0;
