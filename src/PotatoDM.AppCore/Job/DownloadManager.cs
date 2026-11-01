@@ -510,6 +510,23 @@ public sealed class DownloadManager
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Downloads the file again from zero in the same task folder, discarding the
+    /// saved progress. Deliberately not Remove+Add: a fresh job would collide with
+    /// the existing folder, land in "name (1)", and leave a renamed copy of a file
+    /// the user only wanted to retry.
+    /// </summary>
+    public Task RestartAsync(DownloadJob job)
+    {
+        if (!job.CanRestart)
+        {
+            return Task.CompletedTask;
+        }
+
+        Enqueue(job, _settings.Connections, isResume: false, restart: true);
+        return Task.CompletedTask;
+    }
+
     public async Task RemoveAsync(DownloadJob job, bool deletePartialData)
     {
         CancellationTokenSource? probe;
@@ -667,7 +684,7 @@ public sealed class DownloadManager
         }
     }
 
-    private void Enqueue(DownloadJob job, int connections, bool isResume)
+    private void Enqueue(DownloadJob job, int connections, bool isResume, bool restart = false)
     {
         if (connections <= 0)
         {
@@ -677,7 +694,7 @@ public sealed class DownloadManager
         lock (_sync)
         {
             _queue.RemoveAll(entry => entry.Job.Id == job.Id);
-            _queue.Add(new PendingStart(job, connections, isResume));
+            _queue.Add(new PendingStart(job, connections, isResume, restart));
             job.PendingFreshStart = !isResume;
             job.PendingConnections = connections;
             job.StartOverOnResume = false;
@@ -731,7 +748,8 @@ public sealed class DownloadManager
         job.Cancellation = cancellation;
         _cancellations[job.Id] = cancellation;
 
-        var task = Task.Run(() => RunAsync(job, start.Connections, start.IsResume, cancellation));
+        var task = Task.Run(() =>
+            RunAsync(job, start.Connections, start.IsResume, start.Restart, cancellation));
         _running[job.Id] = task;
 
         // Never run the continuation inline. OnTransferCompleted re-enters this
@@ -822,6 +840,7 @@ public sealed class DownloadManager
         DownloadJob job,
         int connections,
         bool isResume,
+        bool restart,
         CancellationTokenSource cancellation)
     {
         if (job.IsTorrent)
@@ -874,6 +893,9 @@ public sealed class DownloadManager
                     SparseWorkingFile = _settings.SparseWorkingFile,
                     FfmpegPath = _settings.FfmpegPath,
                     RequestOptions = requestOptions,
+                    // The engine deletes the old sidecar/working file inside its
+                    // state lock; AppCore must not race it by deleting first.
+                    Restart = restart,
                 };
 
                 result = await engine.DownloadAsync(request, cancellation.Token);
@@ -889,7 +911,7 @@ public sealed class DownloadManager
         }
         catch (Exception ex)
         {
-            CleanupAfterFailure(job);
+            CleanupAfterTransferFailure(job);
             PostFailure(job, ex.Message);
         }
         finally
@@ -962,7 +984,9 @@ public sealed class DownloadManager
         }
         catch (Exception ex)
         {
-            CleanupAfterFailure(job);
+            // libtorrent re-hashes whatever is already on disk, so a failed torrent
+            // is resumable too; keep its payload.
+            CleanupAfterTransferFailure(job);
             PostFailure(job, ex.Message);
         }
     }
@@ -1155,12 +1179,11 @@ public sealed class DownloadManager
                 break;
 
             case JobStatus.Failed:
-                // Failed attempts leave nothing worth keeping; the row stays so
-                // the user can retry from zero in the same task folder.
-                CleanupAfterFailure(job);
-                job.SetHasStateFile(false);
-                job.StartOverOnResume = true;
-                job.MarkFailed("上次下载失败，可以重试。");
+                // The sidecar and partial payload outlived the failure, so the row
+                // comes back resumable instead of losing its progress on restart.
+                job.SetHasStateFile(true);
+                job.StartOverOnResume = false;
+                job.MarkFailed("上次下载失败，可以继续或重新开始。");
                 break;
 
             default:
@@ -1563,8 +1586,9 @@ public sealed class DownloadManager
     }
 
     /// <summary>
-    /// A failed transfer keeps nothing: process files, caches and partial
-    /// payload are removed. The job can be retried from zero.
+    /// Removes every artifact for a job that never produced resumable state —
+    /// probe and registration failures, and records whose files are already gone.
+    /// Transfer failures use <see cref="CleanupAfterTransferFailure"/> instead.
     /// </summary>
     private static void CleanupAfterFailure(DownloadJob job)
     {
@@ -1578,6 +1602,25 @@ public sealed class DownloadManager
         }
 
         job.StartOverOnResume = true;
+    }
+
+    /// <summary>
+    /// A failed transfer keeps everything it can be resumed from: the sidecar, its
+    /// backup and the partial payload. Throwing away a multi-gigabyte transfer that
+    /// died at 95% is the most expensive thing this app can do to a user, and the
+    /// engine already knows how to continue from a failed job. Only per-attempt
+    /// scratch files go.
+    /// </summary>
+    private static void CleanupAfterTransferFailure(DownloadJob job)
+    {
+        if (!string.IsNullOrEmpty(job.StatePath))
+        {
+            // Torn write from a crash mid-save; the real sidecar and its .bak are
+            // authoritative and stay.
+            FileSystemHelpers.TryDeleteFile(job.StatePath + ".tmp");
+        }
+
+        job.StartOverOnResume = false;
     }
 
     /// <summary>Cleanup for records written before the per-task folder layout.</summary>
@@ -1757,10 +1800,16 @@ public sealed class DownloadManager
 
     private void PostFailure(DownloadJob job, string message)
     {
+        // A failed transfer keeps its sidecar, so report what is actually on disk.
+        // Hardcoding true would claim a sidecar for torrent/media jobs, which never
+        // write one; hardcoding false would silently downgrade "resume" to "start
+        // over" while still appearing to work.
+        var hasStateFile = !string.IsNullOrEmpty(job.StatePath) && File.Exists(job.StatePath);
+
         _ui.Post(() =>
         {
-            job.SetHasStateFile(false);
-            job.StartOverOnResume = true;
+            job.SetHasStateFile(hasStateFile);
+            job.StartOverOnResume = false;
             job.MarkFailed(message);
         });
     }
@@ -1768,5 +1817,8 @@ public sealed class DownloadManager
     private readonly record struct PendingStart(
         DownloadJob Job,
         int Connections,
-        bool IsResume);
+        bool IsResume,
+        // Carried here rather than on the job: Enqueue clears StartOverOnResume
+        // on the way in, so a job field could not survive the trip.
+        bool Restart = false);
 }

@@ -49,6 +49,7 @@
                 <WrapPanel>
                     <Button Content="暂停" Command="{Binding PauseCommand}" Style="{StaticResource ToolbarButton}"/>
                     <Button Content="继续" Command="{Binding ResumeCommand}" Style="{StaticResource ToolbarButton}"/>
+                    <Button Content="重新开始" Command="{Binding RestartCommand}" Style="{StaticResource ToolbarButton}"/>
                     <Button Content="移除" Command="{Binding RemoveCommand}" Style="{StaticResource ToolbarButton}"/>
                     <Button Content="打开文件" Command="{Binding OpenFileCommand}" Style="{StaticResource ToolbarButton}"/>
                     <Button Content="打开文件夹" Command="{Binding OpenFolderCommand}" Style="{StaticResource ToolbarButton}"/>

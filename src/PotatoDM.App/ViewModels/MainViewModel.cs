@@ -30,6 +30,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ResumeCommand = CreateAsync(
             ResumeAsync,
             () => SelectedJob?.CanResume == true);
+        RestartCommand = CreateAsync(
+            RestartAsync,
+            () => SelectedJob?.CanRestart == true);
         RemoveCommand = new RelayCommand(
             () => RemoveRequested?.Invoke(this, EventArgs.Empty),
             () => SelectedJob is not null);
@@ -96,6 +99,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public ICommand ResumeCommand { get; }
 
+    public ICommand RestartCommand { get; }
+
     public ICommand RemoveCommand { get; }
 
     public ICommand OpenFileCommand { get; }
@@ -127,6 +132,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (SelectedJob is { } job)
         {
             await _manager.ResumeAsync(job);
+        }
+    }
+
+    private async Task RestartAsync()
+    {
+        if (SelectedJob is { } job)
+        {
+            await _manager.RestartAsync(job);
         }
     }
 
@@ -215,6 +228,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             case nameof(DownloadJob.BytesDownloaded):
             case nameof(DownloadJob.CanPause):
             case nameof(DownloadJob.CanResume):
+            case nameof(DownloadJob.CanRestart):
             case nameof(DownloadJob.CanOpen):
                 RaiseCommandStates();
                 UpdateStatus();
@@ -226,6 +240,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         (PauseCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         (ResumeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        (RestartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         (RemoveCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenFileCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenFolderCommand as RelayCommand)?.RaiseCanExecuteChanged();

@@ -102,6 +102,21 @@ public sealed class DownloadJob : INotifyPropertyChanged
         _state is DownloadJobState.Paused or DownloadJobState.Failed
         && (_hasStateFile || IsMedia || IsTorrent || StartOverOnResume);
 
+    /// <summary>
+    /// A plain HTTP job can be downloaded again from zero in the same folder.
+    ///
+    /// <para>Completed is excluded on purpose: the target file is already there, so
+    /// restarting would resolve to "name (1)" and leave a duplicate. Torrent and
+    /// media jobs are excluded because they have no restart concept — libtorrent
+    /// re-hashes existing pieces and media reuses its fingerprinted cache, so for
+    /// them "restart" is indistinguishable from "resume"; a button that lights up
+    /// and does nothing is worse than one that stays disabled.</para>
+    /// </summary>
+    public bool CanRestart =>
+        !IsTorrent
+        && !IsMedia
+        && _state is DownloadJobState.Failed or DownloadJobState.Paused;
+
     public string DisplayName =>
         !string.IsNullOrWhiteSpace(_displayName)
             ? _displayName
@@ -351,6 +366,7 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(EtaText));
         Raise(nameof(CanPause));
         Raise(nameof(CanResume));
+        Raise(nameof(CanRestart));
         Raise(nameof(CanOpen));
     }
 

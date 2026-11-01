@@ -718,32 +718,25 @@ public class DownloadManagerTests
     }
 
     [Fact]
-    public async Task Failed_download_deletes_its_task_folder_and_restarts_from_zero()
+    public async Task Failed_download_keeps_its_task_folder_for_resume()
     {
+        // Replaces the old "deletes its task folder and restarts from zero"
+        // assertion: a failed transfer now keeps its sidecar and partial payload
+        // so the engine can continue from where it stopped.
         using var temp = new TempDirectory();
         var folder = Path.Combine(temp.Path, "downloads");
-        var attempts = 0;
 
         var engine = new FakeDownloadEngine
         {
             OnDownload = async (request, cancellationToken) =>
             {
-                if (Interlocked.Increment(ref attempts) == 1)
-                {
-                    Directory.CreateDirectory(request.ProcessDirectory!);
-                    await File.WriteAllTextAsync(request.StatePath!, "{}", cancellationToken);
-                    await File.WriteAllTextAsync(
-                        StatePaths.WorkingIn(request.ProcessDirectory!, request.TargetPath!),
-                        "partial",
-                        cancellationToken);
-                    throw new IOException("network failed");
-                }
-
-                return new DownloadResult(
-                    request.TargetPath ?? string.Empty,
-                    4096,
-                    DownloadMode.Segmented,
-                    TimeSpan.Zero);
+                Directory.CreateDirectory(request.ProcessDirectory!);
+                await File.WriteAllTextAsync(request.StatePath!, "{}", cancellationToken);
+                await File.WriteAllTextAsync(
+                    StatePaths.WorkingIn(request.ProcessDirectory!, request.TargetPath!),
+                    "partial",
+                    cancellationToken);
+                throw new IOException("network failed");
             },
         };
 
@@ -754,14 +747,12 @@ public class DownloadManagerTests
         await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(DownloadJobState.Failed, job.State);
-        Assert.False(Directory.Exists(job.TaskDirectory));
+        Assert.True(Directory.Exists(job.TaskDirectory));
+        Assert.True(File.Exists(job.StatePath));
+        Assert.True(File.Exists(StatePaths.WorkingIn(job.ProcessDirectory, job.TargetPath)));
+        Assert.True(job.HasStateFile);
         Assert.True(job.CanResume);
-
-        await manager.ResumeAsync(job);
-        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
-
-        Assert.Equal(2, attempts);
-        Assert.Equal(DownloadJobState.Completed, job.State);
+        Assert.True(job.CanRestart);
     }
 
     private static ConcurrentDictionary<string, TaskCompletionSource> CreateGates(

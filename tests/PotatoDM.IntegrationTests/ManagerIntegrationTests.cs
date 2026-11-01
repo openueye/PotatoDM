@@ -179,6 +179,45 @@ public class ManagerIntegrationTests
         Assert.Empty(await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
     }
 
+    [Fact]
+    public async Task Restart_after_a_real_failure_reuses_the_folder_and_clears_the_saved_job()
+    {
+        const long size = 2L * 1024 * 1024;
+        var token = IntegrationHelpers.NewToken();
+        var url = new Uri(_server.Url($"/dl?token={token}&size={size}&throttle=8388608"));
+        using var temp = new TempDirectory();
+        var folder = Path.Combine(temp.Path, "downloads");
+        var manager = CreateManager(temp);
+
+        // A 404 on the first segment request is not worth retrying, so the job
+        // fails mid-transfer after the sidecar and working file were written.
+        await _server.ConfigureAsync(token, failSegments: 1, failStatus: 404);
+
+        var job = await manager.AddAsync(url, folder, connections: 4);
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(90));
+
+        Assert.True(
+            job.State == DownloadJobState.Failed,
+            $"job ended as {job.State}: {job.Error}");
+        Assert.True(File.Exists(job.StatePath), "the sidecar must survive the failure");
+
+        var taskDirectory = job.TaskDirectory;
+
+        await _server.ConfigureAsync(token, failSegments: 0);
+
+        // The real engine deletes the stale sidecar inside its state lock. If
+        // Restart were not threaded through, it would throw
+        // StateException("A saved job already exists") instead.
+        await manager.RestartAsync(job);
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(90));
+
+        Assert.True(
+            job.State == DownloadJobState.Completed,
+            $"restart ended as {job.State}: {job.Error}");
+        Assert.Equal(taskDirectory, job.TaskDirectory);
+        Assert.Single(Directory.GetDirectories(folder));
+    }
+
     private static DownloadManager CreateManager(TempDirectory temp)
     {
         return new DownloadManager(
