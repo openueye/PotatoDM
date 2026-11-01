@@ -179,6 +179,77 @@ public class ManagerIntegrationTests
         Assert.Empty(await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync());
     }
 
+    /// <summary>
+    /// The P0 in one test: a transfer that fails part-way keeps the progress it
+    /// already paid for, and "resume" continues from that offset instead of
+    /// fetching the file again from zero.
+    /// </summary>
+    [Fact]
+    public async Task Failed_transfer_keeps_its_progress_and_resumes_from_there()
+    {
+        const long size = 4L * 1024 * 1024;
+        const long partialTarget = 1024 * 1024;
+        var token = IntegrationHelpers.NewToken();
+        var url = new Uri(
+            _server.Url($"/dl?token={token}&size={size}&throttle=1048576&cd=ascii"));
+        using var temp = new TempDirectory();
+        var folder = Path.Combine(temp.Path, "downloads");
+        var manager = CreateManager(temp);
+
+        var job = await manager.AddAsync(url, folder, connections: 4);
+
+        var progressed = await IntegrationHelpers.WaitUntilAsync(
+            () => Task.FromResult(job.BytesDownloaded >= partialTarget),
+            TimeSpan.FromSeconds(60));
+
+        Assert.True(progressed, $"no progress. state={job.State}, error={job.Error}");
+
+        // Pause on real progress, then make the next attempt fail outright so the
+        // job lands in Failed with a sidecar that still describes ~1 MiB.
+        await manager.PauseAsync(job);
+        Assert.Equal(DownloadJobState.Paused, job.State);
+
+        await _server.ConfigureAsync(token, failSegments: 1, failStatus: 404);
+        await manager.ResumeAsync(job);
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(90));
+
+        Assert.True(
+            job.State == DownloadJobState.Failed,
+            $"expected the resumed attempt to fail, got {job.State}: {job.Error}");
+
+        // Read the sidecar from disk: the offsets must have survived the failure.
+        var sidecar = await new JsonDownloadStateStore()
+            .LoadAsync(job.StatePath, CancellationToken.None);
+        Assert.NotNull(sidecar);
+
+        var persisted = sidecar.Segments.Sum(segment => segment.BytesDone);
+        Assert.True(
+            persisted >= partialTarget,
+            $"sidecar kept only {persisted} of {partialTarget} bytes after the failure");
+
+        var servedBeforeResume = (await _server.GetStatsAsync(token)).BytesServed;
+
+        await _server.ConfigureAsync(token, failSegments: 0);
+        await manager.ResumeAsync(job);
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(90));
+
+        Assert.True(
+            job.State == DownloadJobState.Completed,
+            $"resume ended as {job.State}: {job.Error}");
+
+        // A resume that started over would serve roughly (size - persisted) extra
+        // bytes on top of the preallocated portion; continuing serves the remainder.
+        var servedInTotal = (await _server.GetStatsAsync(token)).BytesServed;
+        Assert.True(
+            servedInTotal < size + partialTarget,
+            $"resume re-fetched instead of continuing: served {servedInTotal} bytes " +
+            $"for a {size} byte file with {persisted} already on disk");
+
+        Assert.Equal(
+            await _server.GetChecksumAsync(token, size),
+            await IntegrationHelpers.Sha256Async(job.TargetPath));
+    }
+
     [Fact]
     public async Task Restart_after_a_real_failure_reuses_the_folder_and_clears_the_saved_job()
     {
