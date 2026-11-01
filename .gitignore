@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+TestResults/
+*.download.json
+*.download.json.bak
+*.download.json.tmp
+*.zephyr-part
+*.zephyr-part.lock
+publish/

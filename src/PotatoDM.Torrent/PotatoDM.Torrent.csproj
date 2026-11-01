@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>PotatoDM.Torrent</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Isolated from PotatoDM.Core, which keeps zero third-party dependencies. -->
+    <!-- csdl wraps libtorrent-rasterbar (uTP, MSE encryption, DHT, PEX). -->
+    <PackageReference Include="csdl" Version="1.2.1" />
+    <!-- MonoTorrent is kept for magnet metadata exchange only. -->
+    <PackageReference Include="MonoTorrent" Version="3.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PotatoDM.Core\PotatoDM.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PotatoDM.Torrent.Tests" />
+  </ItemGroup>
+
+</Project>

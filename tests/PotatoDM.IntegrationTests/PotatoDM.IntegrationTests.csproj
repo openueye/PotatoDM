@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="PotatoDM.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\TempDirectory.cs" Link="TempDirectory.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\src\PotatoDM.AppCore\PotatoDM.AppCore.csproj" />
+    <ProjectReference Include="..\..\src\PotatoDM.Core\PotatoDM.Core.csproj" />
+    <ProjectReference Include="..\..\src\PotatoDM.BrowserIpc\PotatoDM.BrowserIpc.csproj" />
+    <ProjectReference Include="..\PotatoDM.TestServer\PotatoDM.TestServer.csproj" />
+    <ProjectReference Include="..\..\src\PotatoDM.Cli\PotatoDM.Cli.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\PotatoDM.BrowserHost\PotatoDM.BrowserHost.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopyCliForIntegrationTests" AfterTargets="Build">
+    <ItemGroup>
+      <CliOutput Include="$(MSBuildThisFileDirectory)..\..\src\PotatoDM.Cli\bin\$(Configuration)\net8.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CliOutput)" DestinationFolder="$(OutDir)cli\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyBrowserHostForIntegrationTests" AfterTargets="Build">
+    <ItemGroup>
+      <BrowserHostOutput Include="$(MSBuildThisFileDirectory)..\..\src\PotatoDM.BrowserHost\bin\$(Configuration)\net8.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(BrowserHostOutput)" DestinationFolder="$(OutDir)host\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

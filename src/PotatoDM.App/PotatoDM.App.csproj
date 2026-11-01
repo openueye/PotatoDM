@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- WPF bindings resolve the default xml:lang (en-US) through ICU. With
+         invariant globalization enabled they throw on the first layout pass. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <AssemblyName>PotatoDM</AssemblyName>
+    <RootNamespace>PotatoDM.App</RootNamespace>
+    <ApplicationIcon>Assets\PotatoDM.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\PotatoDM.ico" />
+    <None Include="Assets\PotatoDM.png" />
+    <None Include="Assets\PotatoDM-source.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PotatoDM.AppCore\PotatoDM.AppCore.csproj" />
+    <ProjectReference Include="..\PotatoDM.Core\PotatoDM.Core.csproj" />
+    <ProjectReference Include="..\PotatoDM.Torrent\PotatoDM.Torrent.csproj" />
+    <ProjectReference Include="..\PotatoDM.BrowserIpc\PotatoDM.BrowserIpc.csproj" />
+    <!-- Build ordering only: the host executable is copied by CopyBrowserHost. -->
+    <ProjectReference Include="..\PotatoDM.BrowserHost\PotatoDM.BrowserHost.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\browser\shared\**\*">
+      <Link>browser-ext\shared\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\browser\chromium\manifest.json">
+      <Link>browser-ext\chromium\manifest.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="CopyBrowserHost" AfterTargets="Build">
+    <ItemGroup>
+      <BrowserHostOutput Include="$(MSBuildThisFileDirectory)..\PotatoDM.BrowserHost\bin\$(Configuration)\net8.0\PotatoDM.BrowserHost.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(BrowserHostOutput)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(BrowserHostOutput)' != ''" />
+  </Target>
+
+  <!-- The apphost is useless without its managed assembly: publish must carry
+       the whole BrowserHost output, not just the files it happened to copy. -->
+  <Target Name="CopyBrowserHostToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <BrowserHostPublishOutput Include="$(MSBuildThisFileDirectory)..\PotatoDM.BrowserHost\bin\$(Configuration)\net8.0\PotatoDM.BrowserHost.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(BrowserHostPublishOutput)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(BrowserHostPublishOutput)' != ''" />
+  </Target>
+
+</Project>

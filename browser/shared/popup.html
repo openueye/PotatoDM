@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --card: #f9fafb;
+      --accent: #c47f0e;
+      --ready: #1e8e3e;
+      --down: #b06000;
+      --missing: #c62828;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1b1b1f;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: #3f3f46;
+        --card: #26262b;
+        --accent: #f0b34a;
+        --ready: #4ade80;
+        --down: #f0a94a;
+        --missing: #f87171;
+      }
+    }
+
+    body {
+      margin: 0;
+      width: 360px;
+      max-width: 100%;
+      padding: 14px 16px 16px;
+      font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+    }
+
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .switch input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .status {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      position: relative;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .status::before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 6px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .status[data-state="ready"]::before { background: var(--ready); }
+    .status[data-state="down"]::before { background: var(--down); }
+    .status[data-state="missing"]::before { background: var(--missing); }
+
+    .last {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .hint {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .setting {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+    }
+
+    select,
+    button {
+      font: inherit;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 5px 8px;
+    }
+
+    select { max-width: 120px; }
+
+    h2 { font-size: 13px; margin: 16px 0 8px; }
+
+    .resources-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 16px 0 8px;
+    }
+
+    .resources-head h2 { margin: 0; }
+
+    .resources-head button { padding: 3px 8px; font-size: 12px; }
+
+    #resources {
+      max-height: 190px;
+      overflow: auto;
+      border-top: 1px solid var(--border);
+    }
+
+    .magnet {
+      display: flex;
+      gap: 8px;
+    }
+
+    .magnet input {
+      flex: 1;
+      min-width: 0;
+      font: inherit;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .resource { padding: 9px 0; border-bottom: 1px solid var(--border); }
+    .resource-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .resource-meta { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+    .empty { color: var(--muted); font-size: 12px; }
+
+    :where(button, select, input[type="checkbox"]):focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    label.switch:focus-within {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <h1>土豆下载器</h1>
+  <p class="subtitle">接管下载，发现媒体资源</p>
+
+  <div class="row">
+    <span>接管浏览器下载</span>
+    <label class="switch">
+      <input id="enabled" type="checkbox" checked />
+      <span id="enabled-label">已开启</span>
+    </label>
+  </div>
+
+  <div class="setting"><label class="switch"><input id="site-enabled" type="checkbox" checked /><span>接管此站点</span></label></div>
+  <div class="setting"><span>小于此大小的下载不接管</span><select id="min-size"><option value="0">不限制</option><option value="1">1 MB</option><option value="2">2 MB</option><option value="5">5 MB</option><option value="10">10 MB</option></select></div>
+
+  <p id="status" class="status" data-state="checking">正在检查…</p>
+  <p id="last" class="last">还没有接管记录。</p>
+
+  <p id="hint" class="hint" hidden title="打开土豆下载器 → 浏览器集成 → 安装 / 修复 → 加载扩展">请在应用内安装浏览器集成。</p>
+
+  <div class="resources-head">
+    <h2>当前页面发现的资源</h2>
+    <button id="refresh-resources" type="button" title="重新扫描当前页面">重新扫描</button>
+  </div>
+  <div id="resources"><p class="empty">正在读取…</p></div>
+
+  <h2>磁力链接</h2>
+  <div class="magnet">
+    <input id="magnet" type="text" placeholder="magnet:?xt=urn:btih:…" spellcheck="false" />
+    <button id="magnet-send">下载</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
