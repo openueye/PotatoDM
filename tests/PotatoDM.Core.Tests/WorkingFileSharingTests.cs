@@ -1,4 +1,5 @@
 using PotatoDM.Core.Exceptions;
+using PotatoDM.Core.Media;
 using PotatoDM.Core.Storage;
 
 namespace PotatoDM.Core.Tests;
@@ -54,6 +55,32 @@ public class WorkingFileSharingTests
 
         await using (var resumed = RandomAccessOutputFile.OpenExisting(working, expectedLength: 2048))
         {
+            Directory.Delete(temp.Path, recursive: true);
+
+            Assert.False(Directory.Exists(temp.Path));
+        }
+    }
+
+    /// <summary>
+    /// The media merge paths (HLS concatenation and the per-track payload files
+    /// that ffmpeg consumes) both open their working file through
+    /// <see cref="MediaDownloader.OpenWorkingOutput"/>, so asserting the sharing
+    /// contract here covers both call sites. Reverting that helper to
+    /// <c>FileShare.None</c> makes this test fail.
+    /// </summary>
+    [Fact]
+    public void MediaWorkingOutput_AllowsRecursiveDelete_WhileHandleOpen()
+    {
+        using var temp = new TempDirectory();
+        var processDirectory = Path.Combine(temp.Path, StatePaths.ProcessDirectoryName);
+        Directory.CreateDirectory(processDirectory);
+        var working = Path.Combine(processDirectory, "movie" + StatePaths.WorkingSuffix);
+
+        using (var output = MediaDownloader.OpenWorkingOutput(working))
+        {
+            output.Write(new byte[1024], 0, 1024);
+            output.Flush();
+
             Directory.Delete(temp.Path, recursive: true);
 
             Assert.False(Directory.Exists(temp.Path));

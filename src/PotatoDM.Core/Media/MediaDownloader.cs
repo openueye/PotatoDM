@@ -761,6 +761,27 @@ public sealed class MediaDownloader
         }
     }
 
+    /// <summary>
+    /// Opens one of the media working files for writing.
+    ///
+    /// <para>Single source of truth for the sharing mode. These files live inside
+    /// the per-task process folder, which the app removes with
+    /// <c>Directory.Delete(recursive: true)</c>; on Windows that marks each file
+    /// delete-pending and fails while any handle lacks <c>FileShare.Delete</c>, so
+    /// a merge that is still streaming must not be able to wedge a delete.</para>
+    ///
+    /// <para>Kept <c>internal</c> so tests can assert the sharing contract
+    /// directly on the same constructor the download path uses.</para>
+    /// </summary>
+    internal static FileStream OpenWorkingOutput(string path) =>
+        new(
+            path,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete,
+            BufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+
     private static async Task CopyWithProgressAsync(
         Stream source,
         Stream destination,
@@ -798,14 +819,7 @@ public sealed class MediaDownloader
     {
         var working = WorkingPathFor(targetPath, processDirectory);
 
-        await using (var output = new FileStream(
-                         working,
-                         FileMode.Create,
-                         FileAccess.Write,
-                         // Include FileShare.Delete so a pending delete can complete once the last handle closes on Windows.
-                         FileShare.ReadWrite | FileShare.Delete,
-                         BufferSize,
-                         FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var output = OpenWorkingOutput(working))
         {
             await AppendTrackAsync(track, output, cancellationToken).ConfigureAwait(false);
             await output.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -870,14 +884,7 @@ public sealed class MediaDownloader
         string path,
         CancellationToken cancellationToken)
     {
-        await using var output = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            // Include FileShare.Delete so a pending delete can complete once the last handle closes on Windows.
-            FileShare.ReadWrite | FileShare.Delete,
-            BufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var output = OpenWorkingOutput(path);
 
         await AppendTrackAsync(track, output, cancellationToken).ConfigureAwait(false);
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);

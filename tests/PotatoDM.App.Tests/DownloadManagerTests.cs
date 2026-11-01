@@ -777,7 +777,7 @@ public class DownloadManagerTests
         return gates;
     }
 
-    private static DownloadManager CreateManager(
+    internal static DownloadManager CreateManager(
         TempDirectory temp,
         FakeDownloadEngine engine,
         AppSettings? settings = null)

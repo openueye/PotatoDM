@@ -6,4 +6,8 @@
     <AssemblyName>PotatoDM.Core</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="PotatoDM.Core.Tests" />
+  </ItemGroup>
+
 </Project>
