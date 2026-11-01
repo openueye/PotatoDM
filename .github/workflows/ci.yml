@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dotnet:
+    # WPF (net8.0-windows) only builds on Windows.
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Directory.Build.props enables the .NET analyzers (Recommended, pinned to
+      # AnalysisLevel 8.0) and TreatWarningsAsErrors, so a clean build *is* the
+      # analyzer gate. --no-incremental because an incremental build can skip a
+      # project and hide a warning that a fresh one reports.
+      - name: Build (analyzers on, warnings are errors)
+        run: dotnet build PotatoDM.sln -c Release --no-incremental
+
+      - name: Test
+        run: >
+          dotnet test PotatoDM.sln -c Release --no-build
+          --logger "trx;LogFileName=results.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-test-results
+          path: TestResults
+          if-no-files-found: ignore
+
+  browser:
+    # The extension's tests are pure logic on node:test with no dependencies, so
+    # they do not need the project's runtime or a browser.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        working-directory: browser
+        run: npm test
