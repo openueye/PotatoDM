@@ -24,6 +24,7 @@
   <ItemGroup>
     <Compile Include="..\Shared\TempDirectory.cs" Link="TempDirectory.cs" />
     <Compile Include="..\Shared\RecordingLogSink.cs" Link="RecordingLogSink.cs" />
+    <Compile Include="..\Shared\RepoRoot.cs" Link="RepoRoot.cs" />
   </ItemGroup>
 
   <ItemGroup>

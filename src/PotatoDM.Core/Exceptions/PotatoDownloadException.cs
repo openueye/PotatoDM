@@ -15,6 +15,13 @@ public static class DownloadExitCode
     /// <summary>DRM-protected or otherwise unsupported media was refused.</summary>
     public const int UnsupportedMedia = 8;
 
+    /// <summary>
+    /// A failure that is expected to clear on its own: 5xx, timeouts, short reads.
+    /// Distinguished from <see cref="HttpPermanentFailure"/> so a script can decide
+    /// to retry instead of concluding the URL is wrong.
+    /// </summary>
+    public const int TransientFailure = 9;
+
     public const int Canceled = 130;
 }
 
@@ -41,7 +48,13 @@ public sealed class ProbeException : PotatoDownloadException
 public sealed class HttpDownloadException : PotatoDownloadException
 {
     public HttpDownloadException(string message, bool isTransient, Exception? innerException = null)
-        : base(message, DownloadExitCode.HttpPermanentFailure, innerException)
+        : base(
+            message,
+            // The flag used to be carried and then discarded, so every 503 reported
+            // exit 4 ("the URL is gone, don't retry"). Keep the two codes in step
+            // with the flag or the CLI lies again.
+            isTransient ? DownloadExitCode.TransientFailure : DownloadExitCode.HttpPermanentFailure,
+            innerException)
     {
         IsTransient = isTransient;
     }

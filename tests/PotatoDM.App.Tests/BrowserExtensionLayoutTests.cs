@@ -74,7 +74,7 @@ public class BrowserExtensionLayoutTests
     [Fact]
     public void Every_script_the_extension_ships_is_on_the_checklist()
     {
-        var shared = Path.Combine(RepositoryRoot(), "browser", "shared");
+        var shared = RepoRoot.Resolve("browser", "shared");
         var scripts = Directory.GetFiles(shared, "*.js", SearchOption.TopDirectoryOnly);
 
         Assert.NotEmpty(scripts);
@@ -93,8 +93,7 @@ public class BrowserExtensionLayoutTests
     [Fact]
     public void Every_manifest_reference_is_on_the_checklist()
     {
-        var root = RepositoryRoot();
-        var manifestPath = Path.Combine(root, "browser", "chromium", "manifest.json");
+        var manifestPath = RepoRoot.Resolve("browser", "chromium", "manifest.json");
         using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
         var element = manifest.RootElement;
 
@@ -188,24 +187,5 @@ public class BrowserExtensionLayoutTests
         var hostExePath = Path.Combine(temp.Path, "PotatoDM.BrowserHost.exe");
         File.WriteAllText(hostExePath, string.Empty);
         return (sourceRoot, hostExePath);
-    }
-
-    /// <summary>
-    /// Walks up from the test binaries until the solution file, so the drift checks read
-    /// the real <c>browser/</c> tree rather than a copy of it.
-    /// </summary>
-    private static string RepositoryRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "PotatoDM.sln")))
-            {
-                return directory.FullName;
-            }
-        }
-
-        throw new InvalidOperationException(
-            "PotatoDM.sln was not found above " + AppContext.BaseDirectory +
-            "; the browser extension drift checks need the repository, not the installed layout.");
     }
 }

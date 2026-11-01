@@ -516,12 +516,15 @@ public static class CliApp
 	private static int MapExitCode(Exception exception) => exception switch
 	{
 		PotatoDownloadException download => download.ExitCode,
-		TorrentException => 1,
-		OperationCanceledException => 130,
-		ArgumentException => 2,
-		IOException => 6,
-		UnauthorizedAccessException => 6,
-		_ => 1,
+		// Deliberate fallback: torrent failures are not classified yet, so every one of
+		// them lands in "未分类错误". Do not invent a mapping here before the throw sites
+		// carry enough information to justify it.
+		TorrentException => DownloadExitCode.Unexpected,
+		OperationCanceledException => DownloadExitCode.Canceled,
+		ArgumentException => DownloadExitCode.BadArguments,
+		IOException => DownloadExitCode.FileAccess,
+		UnauthorizedAccessException => DownloadExitCode.FileAccess,
+		_ => DownloadExitCode.Unexpected,
 	};
 
 	private static string FormatEta(TimeSpan? eta)
