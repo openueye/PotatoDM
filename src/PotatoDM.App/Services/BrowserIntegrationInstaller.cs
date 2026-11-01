@@ -1,5 +1,3 @@
-#nullable disable warnings
-
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -48,8 +46,8 @@ public static class BrowserIntegrationInstaller
 
 	public static BrowserInstallStatus GetStatus()
 	{
-		string text = TryReadChromeId(Path.Combine(SourceRoot, "chromium", "manifest.json"));
-		string text2 = TryReadChromeId(Path.Combine(ChromiumExtensionPath, "manifest.json"));
+		string? text = TryReadChromeId(Path.Combine(SourceRoot, "chromium", "manifest.json"));
+		string? text2 = TryReadChromeId(Path.Combine(ChromiumExtensionPath, "manifest.json"));
 		return new BrowserInstallStatus
 		{
 			HostPresent = File.Exists(HostExePath),
@@ -107,7 +105,7 @@ public static class BrowserIntegrationInstaller
 
 	public static void OpenExtensionPage(BrowserKind browser)
 	{
-		(string, string) tuple = browser switch
+		(string?, string) tuple = browser switch
 		{
 			BrowserKind.Chrome => (DetectChrome(), "chrome://extensions/"), 
 			BrowserKind.Edge => (DetectEdge(), "edge://extensions/"), 
@@ -145,11 +143,14 @@ public static class BrowserIntegrationInstaller
 	private static string ReadChromeId(string manifestPath)
 	{
 		using JsonDocument jsonDocument = JsonDocument.Parse(File.ReadAllText(manifestPath));
-		if (!jsonDocument.RootElement.TryGetProperty("key", out var value) || value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+		string? key = jsonDocument.RootElement.TryGetProperty("key", out var value) && value.ValueKind == JsonValueKind.String
+			? value.GetString()
+			: null;
+		if (string.IsNullOrWhiteSpace(key))
 		{
 			throw new InvalidOperationException("Chromium 扩展 manifest 缺少 key。");
 		}
-		return ChromeExtensionId.FromPublicKey(value.GetString());
+		return ChromeExtensionId.FromPublicKey(key);
 	}
 
 	private static string? TryReadChromeId(string manifestPath)
@@ -173,7 +174,11 @@ public static class BrowserIntegrationInstaller
 
 	private static void WriteHostManifest(string path, object content)
 	{
-		Directory.CreateDirectory(Path.GetDirectoryName(path));
+		var directory = Path.GetDirectoryName(path);
+		if (!string.IsNullOrEmpty(directory))
+		{
+			Directory.CreateDirectory(directory);
+		}
 		File.WriteAllText(path, JsonSerializer.Serialize(content, ManifestJsonOptions));
 	}
 
@@ -196,7 +201,7 @@ public static class BrowserIntegrationInstaller
 
 	private static bool IsRegistered(string keyPath, string expectedManifestPath)
 	{
-		string text = Registry.GetValue("HKEY_CURRENT_USER\\" + keyPath, string.Empty, null) as string;
+		string? text = Registry.GetValue("HKEY_CURRENT_USER\\" + keyPath, string.Empty, null) as string;
 		if (string.IsNullOrWhiteSpace(text))
 		{
 			return false;
@@ -218,7 +223,11 @@ public static class BrowserIntegrationInstaller
 		{
 			string relativePath = Path.GetRelativePath(source, item);
 			string text = Path.Combine(destination, relativePath);
-			Directory.CreateDirectory(Path.GetDirectoryName(text));
+			var directory = Path.GetDirectoryName(text);
+			if (!string.IsNullOrEmpty(directory))
+			{
+				Directory.CreateDirectory(directory);
+			}
 			File.Copy(item, text, overwrite: true);
 		}
 	}
@@ -261,7 +270,7 @@ public static class BrowserIntegrationInstaller
 
 	private static string? FirstExisting(params string?[] candidates)
 	{
-		return candidates.FirstOrDefault((string path) => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+		return candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
 	}
 
 	private static string ProgramFiles()
