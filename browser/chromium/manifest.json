@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "土豆下载器 - 浏览器接管",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "description": "将浏览器下载交给土豆下载器，并发现页面中的可下载媒体资源。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzQEMr1EOfNzBslURYcUx3fNj4eCenukJZZ5+FG8kGTADGhvZBaZwiLGqz0vPF6T/CytNlWhp8fqV1XlGQShyQhUEdAH2gTveXpgi9fUNTh17SK42VgC5fNN7CZaTjoUF4JF6hwm8PY3OZlN2T25XtI7YI/T1lkN68vkIrvtI26UpGf+FQ9Sq6F/VIRCOYG1Namb4lRm+RXlH841TqdWPaRgcJJ256OmCxyH2GkFbbaZQK3DxMs9dxo1kkChbDH0W+2t9og8QwvHRyFbLitFV2mBsdVJU7YQY+7hbQ6QfmnPwwizCSGThaGaTwu9SMRvwmT2gsc00OK0QNA3aaVbW2QIDAQAB",
   "background": {

@@ -36,7 +36,8 @@ public sealed class RandomAccessOutputFile : IOutputFile
                 workingPath,
                 FileMode.Create,
                 FileAccess.Write,
-                FileShare.Read,
+                // Include FileShare.Delete so a pending delete can complete once the last handle closes on Windows.
+                FileShare.ReadWrite | FileShare.Delete,
                 FileOptions.Asynchronous,
                 // Reserving the whole range would defeat the holes, so a sparse
                 // file is extended with SetLength after the flag is applied.
@@ -73,7 +74,8 @@ public sealed class RandomAccessOutputFile : IOutputFile
                 workingPath,
                 FileMode.Open,
                 FileAccess.Write,
-                FileShare.Read,
+                // Include FileShare.Delete so a pending delete can complete once the last handle closes on Windows.
+                FileShare.ReadWrite | FileShare.Delete,
                 FileOptions.Asynchronous);
 
             var actualLength = RandomAccess.GetLength(handle);

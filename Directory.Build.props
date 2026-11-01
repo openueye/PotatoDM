@@ -7,5 +7,9 @@
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
+    <Version>0.1.0</Version>
+    <Product>PotatoDM</Product>
+    <Authors>PotatoDM contributors</Authors>
+    <Copyright>Copyright (c) 2026 PotatoDM contributors</Copyright>
   </PropertyGroup>
 </Project>

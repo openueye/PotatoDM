@@ -7,6 +7,11 @@ TestResults/
 *.download.json
 *.download.json.bak
 *.download.json.tmp
-*.zephyr-part
-*.zephyr-part.lock
+*.potatodm-part
+*.potatodm-part.lock
+*.potatodm-media
+.potatodm/
+.potatodm-torrent-cache
+*.torrent
+/.workbuddy/
 publish/

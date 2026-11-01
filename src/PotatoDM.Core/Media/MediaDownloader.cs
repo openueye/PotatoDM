@@ -922,7 +922,8 @@ public sealed class MediaDownloader
             path,
             FileMode.Open,
             FileAccess.Read,
-            FileShare.Read,
+            // Include FileShare.Delete so a pending delete can complete once the last handle closes on Windows.
+            FileShare.ReadWrite | FileShare.Delete,
             BufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
