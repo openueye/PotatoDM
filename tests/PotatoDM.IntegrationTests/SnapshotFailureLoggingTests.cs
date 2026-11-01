@@ -14,8 +14,7 @@ namespace PotatoDM.IntegrationTests;
 /// "best effort" and used to swallow the failure entirely; these tests pin the
 /// Warning that now makes the situation diagnosable.
 /// </summary>
-[Collection(TestServerCollection.Name)]
-public class SnapshotFailureLoggingTests
+public class SnapshotFailureLoggingTests : IClassFixture<TestServerFixture>
 {
     private readonly TestServerFixture _server;
 

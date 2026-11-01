@@ -5,8 +5,7 @@ using PotatoDM.Core.Storage;
 
 namespace PotatoDM.IntegrationTests;
 
-[Collection(TestServerCollection.Name)]
-public class ManagerIntegrationTests
+public class ManagerIntegrationTests : IClassFixture<TestServerFixture>
 {
     private readonly TestServerFixture _server;
 
@@ -239,13 +238,16 @@ public class ManagerIntegrationTests
             job.State == DownloadJobState.Completed,
             $"resume ended as {job.State}: {job.Error}");
 
-        // A resume that started over would serve roughly (size - persisted) extra
-        // bytes on top of the preallocated portion; continuing serves the remainder.
-        var servedInTotal = (await _server.GetStatsAsync(token)).BytesServed;
+        // Only the last resume's traffic is evidence: the paused attempt and the
+        // deliberately failing one each served an unpredictable amount before they
+        // were cancelled, so their bytes say nothing about resume behaviour.
+        // Continuing serves the remainder (~size - persisted); starting over serves
+        // roughly the whole file again.
+        var servedByResume = (await _server.GetStatsAsync(token)).BytesServed - servedBeforeResume;
         Assert.True(
-            servedInTotal < size + partialTarget,
-            $"resume re-fetched instead of continuing: served {servedInTotal} bytes " +
-            $"for a {size} byte file with {persisted} already on disk");
+            servedByResume < size - partialTarget,
+            $"resume re-fetched instead of continuing: the last resume served " +
+            $"{servedByResume} bytes for a {size} byte file with {persisted} already on disk");
 
         Assert.Equal(
             await _server.GetChecksumAsync(token, size),

@@ -7,8 +7,7 @@ using PotatoDM.Core.Transfer;
 
 namespace PotatoDM.IntegrationTests;
 
-[Collection(TestServerCollection.Name)]
-public class DownloadIntegrationTests
+public class DownloadIntegrationTests : IClassFixture<TestServerFixture>
 {
     private readonly TestServerFixture _server;
 

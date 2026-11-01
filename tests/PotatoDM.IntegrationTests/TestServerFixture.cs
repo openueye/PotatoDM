@@ -4,12 +4,11 @@ using PotatoDM.TestServer;
 
 namespace PotatoDM.IntegrationTests;
 
-[CollectionDefinition(Name)]
-public sealed class TestServerCollection : ICollectionFixture<TestServerFixture>
-{
-    public const string Name = "TestServer";
-}
-
+/// <summary>
+/// One test server per test class, so classes can run in parallel. The server
+/// binds port 0 and every test uses its own token, so separate instances and
+/// separate tokens keep the per-token counters from ever interfering.
+/// </summary>
 public sealed class TestServerFixture : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

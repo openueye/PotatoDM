@@ -10,8 +10,7 @@ using Xunit;
 
 namespace PotatoDM.IntegrationTests;
 
-[Collection("TestServer")]
-public class CliIntegrationTests
+public class CliIntegrationTests : IClassFixture<TestServerFixture>
 {
 	private sealed class CliProcess : IDisposable
 	{

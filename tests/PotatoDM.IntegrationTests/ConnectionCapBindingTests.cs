@@ -16,8 +16,7 @@ namespace PotatoDM.IntegrationTests;
 /// number of overlapping <c>/dl</c> requests), not from a counter inside the app, so
 /// a limiter that is created and never consulted cannot pass.
 /// </remarks>
-[Collection(TestServerCollection.Name)]
-public class ConnectionCapBindingTests
+public class ConnectionCapBindingTests : IClassFixture<TestServerFixture>
 {
     private const long FileSize = 4L * 1024 * 1024;
     private const long ThrottleBytesPerSecond = 1024L * 1024;
