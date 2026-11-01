@@ -5,13 +5,10 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- WPF bindings resolve the default xml:lang (en-US) through ICU. With
          invariant globalization enabled they throw on the first layout pass. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <AssemblyName>PotatoDM</AssemblyName>
-    <RootNamespace>PotatoDM.App</RootNamespace>
     <ApplicationIcon>Assets\PotatoDM.ico</ApplicationIcon>
   </PropertyGroup>
 

@@ -148,6 +148,32 @@ public class CliIntegrationTests : IClassFixture<TestServerFixture>
 		Assert.Equal(2, document.RootElement.GetProperty("exitCode").GetInt32());
 	}
 
+    [Theory]
+    [InlineData("--unknown", "unknown option '--unknown'")]
+    [InlineData("--connections", "requires a value")]
+    [InlineData("--quiet=true", "does not take a value")]
+    public async Task Invalid_switches_report_argument_errors(string option, string message)
+    {
+        using var process = new CliProcess("download", option);
+        await process.WaitForExitAsync();
+        Assert.Equal(2, process.ExitCode);
+        Assert.Contains(message, process.Stderr);
+    }
+
+    [Fact]
+    public async Task Equals_options_and_end_of_options_preserve_the_download()
+    {
+        var token = IntegrationHelpers.NewToken();
+        var url = _server.Url($"/dl?token={token}&size=4096");
+        using var temp = new TempDirectory();
+        var target = temp.FileFor("options.bin");
+        using var process = new CliProcess(
+            "download", "--output=" + target, "--connections=1", "--json", "--no-proxy", "--", url);
+        await process.WaitForExitAsync();
+        Assert.True(process.ExitCode == 0, process.Stderr);
+        Assert.Equal(await _server.GetChecksumAsync(token, 4096), await IntegrationHelpers.Sha256Async(target));
+    }
+
 	[Fact]
 	public async Task Max_speed_option_paces_the_download()
 	{

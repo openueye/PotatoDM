@@ -35,6 +35,7 @@ public static class BrowserExtensionLayout
     public static IReadOnlyList<string> RequiredSourceFiles { get; } = new[]
     {
         Path.Combine("shared", "background.js"),
+        Path.Combine("shared", "browser-api.js"),
         Path.Combine("shared", "settings.js"),
         Path.Combine("shared", "resources.js"),
         Path.Combine("shared", "protocol.js"),

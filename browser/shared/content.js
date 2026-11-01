@@ -6,12 +6,7 @@
 // data and API payloads; this script relays those and scans the page itself.
 
 (() => {
-  const isFirefox =
-    typeof browser !== "undefined" &&
-    browser.runtime &&
-    typeof browser.runtime.getBrowserInfo === "function";
-
-  const api = isFirefox ? browser : chrome;
+  const api = chrome;
 
   const MAX_PER_SCAN = 60;
   const MEDIA_PATH_RE =
@@ -27,16 +22,10 @@
 
   function sendMessage(payload) {
     try {
-      if (isFirefox) {
-        const promise = api.runtime.sendMessage(payload);
-        if (promise && typeof promise.catch === "function") promise.catch(() => {});
-      } else {
-        // The callback suppresses "Unchecked runtime.lastError" when the
-        // service worker is asleep or the page is shutting down.
-        api.runtime.sendMessage(payload, () => {
-          void api.runtime.lastError;
-        });
-      }
+      // Consume lastError when the worker is asleep or the page is shutting down.
+      api.runtime.sendMessage(payload, () => {
+        void api.runtime.lastError;
+      });
     } catch (_) {
       // Extension context invalidated (reload/update); nothing to report to.
     }

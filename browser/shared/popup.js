@@ -4,54 +4,10 @@
 // the namespace is the only way to share the threshold resolver with the worker.
 const { resolveMinSizeMb } = globalThis.PotatoDMSettings;
 
-const isFirefox =
-  typeof browser !== "undefined" &&
-  browser.runtime &&
-  typeof browser.runtime.getBrowserInfo === "function";
-
-const api = isFirefox ? browser : chrome;
-
-function call(fn, ...args) {
-  if (isFirefox) {
-    return Promise.resolve(fn.apply(api, args));
-  }
-
-  return new Promise((resolve, reject) => {
-    fn.apply(api, [
-      ...args,
-      (result) => {
-        const error = chrome.runtime.lastError;
-        if (error) {
-          reject(new Error(error.message));
-        } else {
-          resolve(result);
-        }
-      },
-    ]);
-  });
-}
-
-// StorageArea.get/set must be invoked on their own area object; calling them
-// with `chrome` as `this` raises "Illegal invocation".
-function callStorage(area, method, ...args) {
-  return call(area[method].bind(area), ...args);
-}
+const { api, call, callStorage } = globalThis.PotatoDMBrowser;
 
 function sendMessage(message) {
-  if (isFirefox) {
-    return api.runtime.sendMessage(message);
-  }
-
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      const error = chrome.runtime.lastError;
-      if (error) {
-        reject(new Error(error.message));
-      } else {
-        resolve(response);
-      }
-    });
-  });
+  return call(api.runtime.sendMessage.bind(api.runtime), message);
 }
 
 const REASON_TEXT = {

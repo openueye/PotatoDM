@@ -1,14 +1,9 @@
 "use strict";
 
-// Shared by Chrome/Edge (MV3 service worker) and Firefox (MV3 background page).
-// Chromium exposes callback-based `chrome`; Firefox exposes promise-based
-// `browser`, so every API call goes through `call()`.
-//
-// The pure logic lives in sibling classic scripts so `node --test` can cover it
-// without a browser. `importScripts` works here because this worker is not
-// declared as a module in manifest.json; the destructuring below keeps every call
-// site in this file byte-for-byte unchanged.
-importScripts("settings.js", "resources.js", "protocol.js");
+// Classic MV3 worker; pure helpers are also exercised by node:test.
+importScripts("browser-api.js", "settings.js", "resources.js", "protocol.js");
+
+const { api, call, callStorage } = globalThis.PotatoDMBrowser;
 
 const {
   HOST_NAME,
@@ -37,46 +32,6 @@ const MAX_COOKIES = 512;
 const MAX_COOKIE_BYTES = 32 * 1024;
 const RESOURCE_STORAGE_KEY = "resourcesByTab";
 const GLOBAL_RESOURCE_TTL_MS = 10 * 60 * 1000;
-
-const isFirefox =
-  typeof browser !== "undefined" &&
-  browser.runtime &&
-  typeof browser.runtime.getBrowserInfo === "function";
-
-const api = isFirefox ? browser : chrome;
-
-function call(fn, ...args) {
-  if (isFirefox) {
-    return Promise.resolve(fn.apply(api, args));
-  }
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-
-    fn.apply(api, [
-      ...args,
-      (result) => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        const error = chrome.runtime.lastError;
-        if (error) {
-          reject(new Error(error.message));
-        } else {
-          resolve(result);
-        }
-      },
-    ]);
-  });
-}
-
-// StorageArea.get/set must be invoked on their own area object; calling them
-// with `chrome` as `this` raises "Illegal invocation".
-function callStorage(area, method, ...args) {
-  return call(area[method].bind(area), ...args);
-}
 
 // ---------------------------------------------------------------------------
 // State
@@ -363,10 +318,9 @@ async function handOff(item) {
     contentType:
       typeof item.contentType === "string" ? item.contentType : undefined,
     suggestedFileName: leafName(item.filename) || urlLeafName(item.url),
-    // Firefox does not reliably expose the download referrer.
     // The wire field is "referer" to match BrowserRequest.Referer.
     referer:
-      !isFirefox && typeof item.referrer === "string" ? item.referrer : "",
+      typeof item.referrer === "string" ? item.referrer : "",
     userAgent:
       typeof navigator !== "undefined" && navigator.userAgent
         ? navigator.userAgent
@@ -718,27 +672,16 @@ async function handlePopupMessage(message) {
   }
 }
 
-if (isFirefox) {
-  api.runtime.onMessage.addListener((message, sender) => {
-    if (!message) return undefined;
-    if (message.type === "potato:resources") {
-      acceptPageResources(sender, message);
-      return undefined;
-    }
-    return handlePopupMessage(message);
-  });
-} else {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || typeof message.type !== "string") return false;
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || typeof message.type !== "string") return false;
 
-    if (message.type === "potato:resources") {
-      acceptPageResources(sender, message);
-      return false;
-    }
+  if (message.type === "potato:resources") {
+    acceptPageResources(sender, message);
+    return false;
+  }
 
-    if (!POPUP_MESSAGE_TYPES.has(message.type)) return false;
+  if (!POPUP_MESSAGE_TYPES.has(message.type)) return false;
 
-    handlePopupMessage(message, sender).then(sendResponse);
-    return true;
-  });
-}
+  handlePopupMessage(message, sender).then(sendResponse);
+  return true;
+});

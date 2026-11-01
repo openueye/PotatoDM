@@ -171,7 +171,7 @@ test("every script the worker imports is shipped next to it", () => {
   assert.ok(call, "background.js no longer calls importScripts");
 
   const files = [...call[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(files, ["settings.js", "resources.js", "protocol.js"]);
+  assert.deepEqual(files, ["browser-api.js", "settings.js", "resources.js", "protocol.js"]);
 
   for (const file of files) {
     assert.ok(existsSync(new URL(file, SHARED)), `${file} is missing from shared/`);

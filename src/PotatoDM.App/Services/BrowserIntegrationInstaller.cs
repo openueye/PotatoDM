@@ -19,11 +19,7 @@ public static class BrowserIntegrationInstaller
 
 	private const string EdgeRegistryKey = "Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.potatodm.dm";
 
-	private const string LegacyFirefoxRegistryKey = "Software\\Mozilla\\NativeMessagingHosts\\com.potatodm.dm";
-
 	private const string ChromeHostManifest = "com.potatodm.dm.chromium.json";
-
-	private const string LegacyFirefoxHostManifest = "com.potatodm.dm.firefox.json";
 
 	private static readonly JsonSerializerOptions ManifestJsonOptions = new JsonSerializerOptions
 	{
@@ -38,27 +34,25 @@ public static class BrowserIntegrationInstaller
 
 	private static string HostExePath => Path.Combine(AppContext.BaseDirectory, "PotatoDM.BrowserHost.exe");
 
-	private static string ChromiumManifestPath => Path.Combine(BrowserRoot, "com.potatodm.dm.chromium.json");
-
-	private static string LegacyFirefoxExtensionPath => Path.Combine(BrowserRoot, "firefox");
-
-	private static string LegacyFirefoxManifestPath => Path.Combine(BrowserRoot, "com.potatodm.dm.firefox.json");
+	private static string ChromiumManifestPath => Path.Combine(BrowserRoot, ChromeHostManifest);
 
 	public static BrowserInstallStatus GetStatus()
 	{
-		string? text = TryReadChromeId(Path.Combine(SourceRoot, "chromium", "manifest.json"));
-		string? text2 = TryReadChromeId(Path.Combine(ChromiumExtensionPath, "manifest.json"));
+		var sourceId = TryReadChromeId(Path.Combine(SourceRoot, "chromium", "manifest.json"));
+		var installedId = TryReadChromeId(Path.Combine(ChromiumExtensionPath, "manifest.json"));
+		var chromePath = DetectChrome();
+		var edgePath = DetectEdge();
 		return new BrowserInstallStatus
 		{
 			HostPresent = File.Exists(HostExePath),
 			SourcePresent = Directory.Exists(SourceRoot),
-			ChromeDetected = (DetectChrome() != null),
-			EdgeDetected = (DetectEdge() != null),
-			ChromeRegistered = IsRegistered("Software\\Google\\Chrome\\NativeMessagingHosts\\com.potatodm.dm", ChromiumManifestPath),
-			EdgeRegistered = IsRegistered("Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.potatodm.dm", ChromiumManifestPath),
-			ChromeId = (text2 ?? text),
-			ChromePath = DetectChrome(),
-			EdgePath = DetectEdge(),
+			ChromeDetected = chromePath is not null,
+			EdgeDetected = edgePath is not null,
+			ChromeRegistered = IsRegistered(ChromeRegistryKey, ChromiumManifestPath),
+			EdgeRegistered = IsRegistered(EdgeRegistryKey, ChromiumManifestPath),
+			ChromeId = installedId ?? sourceId,
+			ChromePath = chromePath,
+			EdgePath = edgePath,
 			BrowserRoot = BrowserRoot,
 			ChromiumExtensionPath = ChromiumExtensionPath,
 			HostManifestPath = ChromiumManifestPath
@@ -68,30 +62,28 @@ public static class BrowserIntegrationInstaller
 	public static void Install()
 	{
 		EnsureSources();
-		CleanupLegacyFirefox();
 		Directory.CreateDirectory(ChromiumExtensionPath);
 		CopyDirectory(Path.Combine(SourceRoot, "shared"), ChromiumExtensionPath);
 		File.Copy(Path.Combine(SourceRoot, "chromium", "manifest.json"), Path.Combine(ChromiumExtensionPath, "manifest.json"), overwrite: true);
 		string text = ReadChromeId(Path.Combine(ChromiumExtensionPath, "manifest.json"));
 		WriteHostManifest(ChromiumManifestPath, new
 		{
-			name = "com.potatodm.dm",
+			name = HostName,
 			description = "PotatoDM browser download bridge",
 			path = HostExePath,
 			type = "stdio",
 			allowed_origins = new string[1] { "chrome-extension://" + text + "/" }
 		});
-		Register("Software\\Google\\Chrome\\NativeMessagingHosts\\com.potatodm.dm", ChromiumManifestPath);
-		Register("Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.potatodm.dm", ChromiumManifestPath);
+		Register(ChromeRegistryKey, ChromiumManifestPath);
+		Register(EdgeRegistryKey, ChromiumManifestPath);
 	}
 
 	public static void Uninstall()
 	{
-		DeleteRegistryKey("Software\\Google\\Chrome\\NativeMessagingHosts\\com.potatodm.dm");
-		DeleteRegistryKey("Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.potatodm.dm");
+		DeleteRegistryKey(ChromeRegistryKey);
+		DeleteRegistryKey(EdgeRegistryKey);
 		FileSystemHelpers.TryDeleteFile(ChromiumManifestPath);
 		TryDeleteDirectory(ChromiumExtensionPath);
-		CleanupLegacyFirefox();
 	}
 
 	public static void OpenExtensionFolder()
@@ -163,13 +155,6 @@ public static class BrowserIntegrationInstaller
 		{
 			return null;
 		}
-	}
-
-	private static void CleanupLegacyFirefox()
-	{
-		DeleteRegistryKey("Software\\Mozilla\\NativeMessagingHosts\\com.potatodm.dm");
-		FileSystemHelpers.TryDeleteFile(LegacyFirefoxManifestPath);
-		TryDeleteDirectory(LegacyFirefoxExtensionPath);
 	}
 
 	private static void WriteHostManifest(string path, object content)
