@@ -262,7 +262,6 @@ public sealed partial class DownloadManager
 
             MarkRecordCompleted(job.Id);
             job.MarkCompleted(totalBytes);
-            RaiseJobEvent(JobCompleted, job, nameof(JobCompleted));
         });
     }
 
@@ -279,32 +278,7 @@ public sealed partial class DownloadManager
             job.SetHasStateFile(hasStateFile);
             job.StartOverOnResume = false;
             job.MarkFailed(message);
-            RaiseJobEvent(JobFailed, job, nameof(JobFailed));
         });
-    }
-
-    private void RaiseJobEvent(
-        EventHandler<DownloadJob>? handler,
-        DownloadJob job,
-        string eventName)
-    {
-        if (handler is null)
-        {
-            return;
-        }
-
-        try
-        {
-            handler(this, job);
-        }
-        catch (Exception ex)
-        {
-            // A tray notification must never turn a finished download into a crash.
-            if (_log.CanLog(LogLevel.Warning))
-            {
-                _log.Warning($"A {eventName} subscriber threw.", ex);
-            }
-        }
     }
 
     private sealed record TorrentUiUpdate(string Name, bool IsChecking, DownloadProgress Progress);

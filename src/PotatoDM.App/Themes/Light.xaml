@@ -24,6 +24,7 @@
     <SolidColorBrush x:Key="TableHeaderBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="ProgressTrackBrush" Color="#E8E8ED" />
     <SolidColorBrush x:Key="BadgeBackgroundBrush" Color="#F2F2F7" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C7C7CC" />
     <SolidColorBrush x:Key="ReadOnlyInputBrush" Color="#F5F5F7" />
 
     <SolidColorBrush x:Key="StateNeutralBackgroundBrush" Color="#F2F2F7" />

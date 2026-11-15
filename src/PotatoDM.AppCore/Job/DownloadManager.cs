@@ -44,12 +44,6 @@ public sealed partial class DownloadManager
     private readonly HashSet<string> _reservedTargets = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _sync = new();
 
-    /// <summary>Raised on the UI thread after a job reaches <c>Completed</c>.</summary>
-    public event EventHandler<DownloadJob>? JobCompleted;
-
-    /// <summary>Raised on the UI thread after a job reaches <c>Failed</c>.</summary>
-    public event EventHandler<DownloadJob>? JobFailed;
-
     public DownloadManager(
         IUiDispatcher ui,
         JobRegistryStore registry,

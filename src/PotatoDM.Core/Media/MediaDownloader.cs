@@ -80,7 +80,6 @@ public static partial class MediaDownloader
             request.MaxConnectionsPerJob,
             request.MaxConnectionsPerHost);
 
-        var progress = new ProgressAggregator(onProgress);
         var keyCache = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var cached = new List<CachedTrack>();
 
@@ -101,7 +100,8 @@ public static partial class MediaDownloader
                 limiter,
                 keyCache,
                 request.BandwidthLimiter,
-                progress,
+                Math.Max(1, request.Connections),
+                onProgress,
                 cancellationToken)
             .ConfigureAwait(false);
 

@@ -7,7 +7,6 @@ public sealed class TrayIconService : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
     private readonly Icon? _ownedIcon;
-    private Action? _balloonAction;
 
     public TrayIconService(
         Action open,
@@ -37,12 +36,6 @@ public sealed class TrayIconService : IDisposable
             Visible = true,
         };
         _icon.DoubleClick += (_, _) => open();
-        _icon.BalloonTipClicked += (_, _) =>
-        {
-            var action = _balloonAction;
-            _balloonAction = null;
-            action?.Invoke();
-        };
     }
 
     /// <summary>Mirrors the main window's status line into the tray tooltip.</summary>
@@ -58,16 +51,6 @@ public sealed class TrayIconService : IDisposable
         }
 
         _icon.Text = text;
-    }
-
-    /// <summary>Shows a completion/failure balloon; clicking it runs <paramref name="onClick"/>.</summary>
-    public void Notify(string title, string message, bool isError, Action? onClick = null)
-    {
-        _balloonAction = onClick;
-        _icon.BalloonTipTitle = Truncate(title, 63);
-        _icon.BalloonTipText = Truncate(message, 255);
-        _icon.BalloonTipIcon = isError ? Forms.ToolTipIcon.Error : Forms.ToolTipIcon.Info;
-        _icon.ShowBalloonTip(5000);
     }
 
     public void Dispose()

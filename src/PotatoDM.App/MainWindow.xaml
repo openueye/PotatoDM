@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="clr-namespace:PotatoDM.AppCore.Models;assembly=PotatoDM.AppCore"
         xmlns:vm="clr-namespace:PotatoDM.AppCore.Job;assembly=PotatoDM.AppCore"
+        xmlns:controls="clr-namespace:PotatoDM.App.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="土豆下载器" Icon="Assets/PotatoDM.ico" Height="760" Width="1180"
         MinHeight="600" MinWidth="980" WindowStartupLocation="CenterScreen"
@@ -353,6 +354,9 @@
                               SelectionChanged="OnSelectionChanged"
                               PreviewMouseRightButtonDown="OnGridPreviewMouseRightButtonDown"
                               MouseDoubleClick="OnGridDoubleClick">
+                        <DataGrid.Resources>
+                            <Style TargetType="ScrollBar" BasedOn="{StaticResource {x:Type ScrollBar}}" />
+                        </DataGrid.Resources>
                         <DataGrid.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                 <MenuItem Header="打开文件(_O)" Command="{Binding OpenFileCommand}"/>
@@ -447,30 +451,23 @@
                                                      Background="{DynamicResource ProgressTrackBrush}"
                                                      BorderThickness="0"
                                                      AutomationProperties.Name="{Binding DisplayName, StringFormat=下载进度 {0}}"/>
-                                        <ItemsControl ItemsSource="{Binding SegmentProgresses}" Height="5" Margin="0,4,0,0"
-                                                      AutomationProperties.Name="各分段实时进度">
-                                            <ItemsControl.Style><Style TargetType="ItemsControl">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers><DataTrigger Binding="{Binding HasSegmentProgress}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
-                                            </Style></ItemsControl.Style>
-                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate><DataTemplate>
-                                                <Border Margin="0,0,2,0">
-                                                    <Border.ToolTip><ToolTip>
-                                                        <StackPanel>
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="序号 "/><TextBlock Text="{Binding DisplayIndex}"/>
-                                                            </StackPanel>
-                                                            <TextBlock Text="{Binding Percent, StringFormat={}{0:0.0}%}" Foreground="{DynamicResource MutedBrush}"/>
-                                                        </StackPanel>
-                                                    </ToolTip></Border.ToolTip>
-                                                    <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Height="5"
-                                                                 Foreground="{DynamicResource BrandDarkBrush}"
-                                                                 Background="{DynamicResource ProgressTrackBrush}"
-                                                                 BorderThickness="0"/>
-                                                </Border>
-                                            </DataTemplate></ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                        <controls:SegmentBar Height="6" Margin="0,5,0,0"
+                                                     Segments="{Binding SegmentProgresses}"
+                                                     TrackBrush="{DynamicResource ProgressTrackBrush}"
+                                                     FillBrush="{DynamicResource BrandDarkBrush}"
+                                                     ToolTip="{Binding SegmentSummary}"
+                                                     AutomationProperties.Name="{Binding SegmentSummary}">
+                                            <controls:SegmentBar.Style>
+                                                <Style TargetType="controls:SegmentBar">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasSegmentProgress}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </controls:SegmentBar.Style>
+                                        </controls:SegmentBar>
                                     </StackPanel>
                                 </DataTemplate></DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

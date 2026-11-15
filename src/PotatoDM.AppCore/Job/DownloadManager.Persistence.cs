@@ -421,7 +421,7 @@ public sealed partial class DownloadManager
     {
         job.IsMedia = isMedia;
         job.IsTorrent = isTorrent;
-        job.ResolveTarget(layout.TargetPath, layout.StatePath, totalBytes, layout.TaskDirectory);
+        job.ResolveTarget(layout.TargetPath, layout.StatePath, isMedia ? 0 : totalBytes, layout.TaskDirectory);
 
         lock (_sync)
         {

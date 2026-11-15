@@ -123,52 +123,80 @@ public static partial class MediaDownloader
         ConnectionLimiter limiter,
         Dictionary<string, byte[]> keys,
         IBandwidthLimiter? bandwidthLimiter,
-        ProgressAggregator progress,
+        int connections,
+        Action<DownloadProgress>? onProgress,
         CancellationToken cancellationToken)
     {
-        var jobs = new List<FetchJob>();
+        var parts = new List<MediaPart>();
+        var pending = new List<MediaPart>();
 
         foreach (var track in tracks)
         {
             foreach (var initialization in track.Initializations)
             {
-                if (!File.Exists(initialization.Path))
+                var part = new MediaPart(
+                    parts.Count,
+                    FetchJob.ForInitialization(initialization),
+                    initialization.Value.Range?.Length ?? 0,
+                    isInitialization: true);
+
+                parts.Add(part);
+
+                if (File.Exists(initialization.Path))
                 {
-                    jobs.Add(FetchJob.ForInitialization(initialization));
+                    part.MarkCompleted(new FileInfo(initialization.Path).Length);
+                }
+                else
+                {
+                    pending.Add(part);
                 }
             }
 
             foreach (var segment in track.Segments)
             {
-                if (!File.Exists(segment.Path))
+                var part = new MediaPart(
+                    parts.Count,
+                    FetchJob.ForSegment(segment),
+                    segment.Segment.Range?.Length ?? 0,
+                    isInitialization: false);
+
+                parts.Add(part);
+
+                if (File.Exists(segment.Path))
                 {
-                    jobs.Add(FetchJob.ForSegment(segment));
+                    part.MarkCompleted(new FileInfo(segment.Path).Length);
+                }
+                else
+                {
+                    pending.Add(part);
                 }
             }
         }
 
-        if (jobs.Count == 0)
+        if (pending.Count == 0)
         {
             return;
         }
 
+        var progress = new ProgressAggregator(onProgress, parts);
+
         await Parallel.ForEachAsync(
-                jobs,
+                pending,
                 new ParallelOptions
                 {
-                    MaxDegreeOfParallelism = Math.Max(1, Math.Min(16, jobs.Count)),
+                    MaxDegreeOfParallelism = Math.Max(1, Math.Min(connections, pending.Count)),
                     CancellationToken = cancellationToken,
                 },
-                async (job, token) =>
+                async (part, token) =>
                 {
-                    using var lease = await limiter.AcquireAsync(job.Uri, token).ConfigureAwait(false);
+                    using var lease = await limiter.AcquireAsync(part.Job.Uri, token).ConfigureAwait(false);
                     progress.Enter();
 
                     try
                     {
                         await FetchPartWithRetryAsync(
                                 client,
-                                job,
+                                part,
                                 requestOptions,
                                 retry,
                                 keys,
@@ -187,7 +215,7 @@ public static partial class MediaDownloader
 
     private static async Task FetchPartWithRetryAsync(
         HttpClient client,
-        FetchJob job,
+        MediaPart part,
         RequestOptions requestOptions,
         RetryPolicy retry,
         Dictionary<string, byte[]> keys,
@@ -201,7 +229,7 @@ public static partial class MediaDownloader
             {
                 await FetchPartOnceAsync(
                         client,
-                        job,
+                        part,
                         requestOptions,
                         keys,
                         bandwidthLimiter,
@@ -214,7 +242,7 @@ public static partial class MediaDownloader
             {
                 if (attempt >= retry.MaxRetries)
                 {
-                    throw MediaHttp.RetryExhausted(ex, job.Uri, attempt + 1);
+                    throw MediaHttp.RetryExhausted(ex, part.Job.Uri, attempt + 1);
                 }
 
                 var retryAfter = ex.Data.Contains("RetryAfter") &&
@@ -230,14 +258,16 @@ public static partial class MediaDownloader
 
     private static async Task FetchPartOnceAsync(
         HttpClient client,
-        FetchJob job,
+        MediaPart part,
         RequestOptions requestOptions,
         Dictionary<string, byte[]> keys,
         IBandwidthLimiter? bandwidthLimiter,
         ProgressAggregator progress,
         CancellationToken cancellationToken)
     {
+        var job = part.Job;
         var temporary = job.Path + ".tmp";
+        progress.Reset(part);
 
         try
         {
@@ -261,6 +291,13 @@ public static partial class MediaDownloader
                 }
 
                 EnsureIdentityEncoding(response);
+
+                var expectedLength = job.Range?.Length ?? response.Content.Headers.ContentLength;
+
+                if (expectedLength is > 0)
+                {
+                    progress.SetTotal(part, expectedLength.Value);
+                }
 
                 var body = await response.Content
                     .ReadAsStreamAsync(cancellationToken)
@@ -294,6 +331,7 @@ public static partial class MediaDownloader
                                 output,
                                 bandwidthLimiter,
                                 progress,
+                                part,
                                 cancellationToken)
                             .ConfigureAwait(false);
                     }
@@ -320,6 +358,7 @@ public static partial class MediaDownloader
                                 output,
                                 bandwidthLimiter,
                                 progress,
+                                part,
                                 cancellationToken)
                             .ConfigureAwait(false);
                     }
@@ -338,6 +377,7 @@ public static partial class MediaDownloader
             }
 
             File.Move(temporary, job.Path, overwrite: true);
+            progress.Complete(part);
         }
         catch
         {
@@ -351,6 +391,7 @@ public static partial class MediaDownloader
         Stream destination,
         IBandwidthLimiter? bandwidthLimiter,
         ProgressAggregator progress,
+        MediaPart part,
         CancellationToken cancellationToken)
     {
         var buffer = new byte[BufferSize];
@@ -371,7 +412,44 @@ public static partial class MediaDownloader
                 await bandwidthLimiter.ThrottleAsync(read, cancellationToken).ConfigureAwait(false);
             }
 
-            progress.Add(read);
+            progress.Add(part, read);
+        }
+    }
+
+    private sealed class MediaPart
+    {
+        public MediaPart(int index, FetchJob job, long knownTotal, bool isInitialization)
+        {
+            Index = index;
+            Job = job;
+            Total = knownTotal;
+            IsInitialization = isInitialization;
+        }
+
+        public int Index { get; }
+
+        public bool IsInitialization { get; }
+
+        public FetchJob Job { get; }
+
+        public long Downloaded { get; set; }
+
+        public long Total { get; set; }
+
+        public long CompletedBytes { get; private set; }
+
+        public bool Completed { get; private set; }
+
+        public void MarkCompleted(long bytes)
+        {
+            Completed = true;
+            CompletedBytes = bytes;
+            Downloaded = bytes;
+
+            if (bytes > 0)
+            {
+                Total = bytes;
+            }
         }
     }
 
@@ -414,47 +492,197 @@ public static partial class MediaDownloader
     private sealed class ProgressAggregator
     {
         private readonly Action<DownloadProgress>? _onProgress;
+        private readonly IReadOnlyList<MediaPart> _parts;
         private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
         private readonly object _gate = new();
-        private long _downloaded;
-        private long _active;
         private long _lastReport;
+        private int _active;
 
-        public ProgressAggregator(Action<DownloadProgress>? onProgress)
+        public ProgressAggregator(
+            Action<DownloadProgress>? onProgress,
+            IReadOnlyList<MediaPart> parts)
         {
             _onProgress = onProgress;
+            _parts = parts;
         }
 
         public void Enter() => Interlocked.Increment(ref _active);
 
         public void Leave() => Interlocked.Decrement(ref _active);
 
-        public void Add(int bytes)
+        public void Reset(MediaPart part)
         {
-            Interlocked.Add(ref _downloaded, bytes);
+            lock (_gate)
+            {
+                part.Downloaded = 0;
+            }
+        }
 
+        public void SetTotal(MediaPart part, long total)
+        {
+            lock (_gate)
+            {
+                if (total > 0)
+                {
+                    part.Total = total;
+                }
+            }
+        }
+
+        public void Add(MediaPart part, int bytes)
+        {
+            lock (_gate)
+            {
+                part.Downloaded += bytes;
+            }
+
+            MaybeReport(force: false);
+        }
+
+        public void Complete(MediaPart part)
+        {
+            bool allCompleted;
+
+            lock (_gate)
+            {
+                part.MarkCompleted(new FileInfo(part.Job.Path).Length);
+                allCompleted = _parts.All(item => item.Completed);
+            }
+
+            // One completion report per part would flood a thousand-segment
+            // playlist; report at the normal cadence and force the final state.
+            MaybeReport(allCompleted);
+        }
+
+        private void MaybeReport(bool force)
+        {
             var now = Stopwatch.GetTimestamp();
             var minimum = Stopwatch.Frequency / 4;
             var last = Interlocked.Read(ref _lastReport);
 
-            if (now - last < minimum)
+            if (!force && now - last < minimum)
             {
                 return;
             }
 
             Interlocked.Exchange(ref _lastReport, now);
+            Report();
+        }
+
+        private void Report()
+        {
+            DownloadProgress progress;
 
             lock (_gate)
             {
-                var total = Interlocked.Read(ref _downloaded);
+                long completedBytes = 0;
+                long inFlightBytes = 0;
+                long knownTotal = 0;
+                var completedParts = 0;
+                var activeParts = 0;
+                var everyPartKnown = _parts.Count > 0;
+
+                foreach (var part in _parts)
+                {
+                    if (part.Completed)
+                    {
+                        completedParts++;
+                        completedBytes += part.CompletedBytes;
+                    }
+                    else
+                    {
+                        inFlightBytes += part.Downloaded;
+
+                        if (part.Downloaded > 0)
+                        {
+                            activeParts++;
+                        }
+                    }
+
+                    if (part.Total > 0)
+                    {
+                        knownTotal += part.Total;
+                    }
+                    else
+                    {
+                        everyPartKnown = false;
+                    }
+                }
+
+                long? estimate = null;
+
+                if (everyPartKnown)
+                {
+                    estimate = knownTotal;
+                }
+                else if (completedParts > 0)
+                {
+                    var average = completedBytes / completedParts;
+                    var remaining = _parts.Count - completedParts;
+                    var unknown = Math.Max(0, remaining - activeParts);
+                    estimate = completedBytes + inFlightBytes + unknown * average;
+                }
+                else if (_parts.Count == 1 && _parts[0].Total > 0)
+                {
+                    estimate = _parts[0].Total;
+                }
+
+                var downloaded = completedBytes + inFlightBytes;
                 var seconds = Math.Max(0.001, _stopwatch.Elapsed.TotalSeconds);
-                _onProgress?.Invoke(new DownloadProgress(
-                    total,
-                    null,
-                    total / seconds,
-                    null,
-                    (int)Interlocked.Read(ref _active)));
+                var speed = downloaded / seconds;
+                TimeSpan? eta = estimate is { } total && total > downloaded && speed > 0
+                    ? TimeSpan.FromSeconds((total - downloaded) / speed)
+                    : null;
+
+                progress = new DownloadProgress(
+                    downloaded,
+                    estimate,
+                    speed,
+                    eta,
+                    _active,
+                    BuildSegments());
             }
+
+            _onProgress?.Invoke(progress);
+        }
+
+        private DownloadSegmentProgress[]? BuildSegments()
+        {
+            var count = _parts.Count(part => !part.IsInitialization);
+
+            if (count == 0)
+            {
+                return null;
+            }
+
+            var segments = new DownloadSegmentProgress[count];
+            var index = 0;
+
+            foreach (var part in _parts)
+            {
+                if (part.IsInitialization)
+                {
+                    continue;
+                }
+
+                var downloaded = part.Completed ? part.CompletedBytes : part.Downloaded;
+                segments[index] = new DownloadSegmentProgress(index, downloaded, part.Total);
+                index++;
+            }
+
+            return segments;
+        }
+
+        private static double Fraction(MediaPart part)
+        {
+            if (part.Completed)
+            {
+                return 1;
+            }
+
+            return part.Total > 0
+                ? Math.Clamp((double)part.Downloaded / part.Total, 0, 1)
+                : 0;
         }
     }
 }

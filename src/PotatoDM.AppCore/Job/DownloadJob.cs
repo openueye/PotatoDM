@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using PotatoDM.AppCore.Models;
@@ -27,14 +26,13 @@ public sealed class DownloadJob : INotifyPropertyChanged
     private bool _torrentChecking;
     private string? _error;
     private bool _hasStateFile;
-    private readonly ObservableCollection<DownloadSegmentProgress> _segmentProgresses = [];
+    private IReadOnlyList<DownloadSegmentProgress> _segmentProgresses = Array.Empty<DownloadSegmentProgress>();
 
     public DownloadJob(string id, string url, DateTimeOffset createdUtc)
     {
         Id = id;
         Url = url;
         CreatedUtc = createdUtc;
-        SegmentProgresses = new ReadOnlyObservableCollection<DownloadSegmentProgress>(_segmentProgresses);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -76,15 +74,15 @@ public sealed class DownloadJob : INotifyPropertyChanged
 
     public bool HasStateFile => _hasStateFile;
 
-    /// <summary>Read-only snapshots for the visual mini-bars under the total progress.</summary>
-    public ReadOnlyObservableCollection<DownloadSegmentProgress> SegmentProgresses { get; }
+    /// <summary>Immutable snapshot for the visual chunk bar under the total progress.</summary>
+    public IReadOnlyList<DownloadSegmentProgress> SegmentProgresses => _segmentProgresses;
 
     public bool HasSegmentProgress => SegmentProgresses.Count > 1;
 
     public string SegmentSummary =>
         !HasSegmentProgress
             ? string.Empty
-            : IsTorrent
+            : IsTorrent || IsMedia
                 ? $"{SegmentProgresses.Count} 块"
                 : $"{SegmentProgresses.Count} 段并行";
 
@@ -124,23 +122,53 @@ public sealed class DownloadJob : INotifyPropertyChanged
                 ? Url
                 : Path.GetFileName(_targetPath);
 
-    public double PercentValue =>
-        _totalBytes > 0
-            ? Math.Clamp((double)_bytesDownloaded / _totalBytes * 100.0, 0, 100)
-            : 0;
+    public double PercentValue
+    {
+        get
+        {
+            if (_totalBytes > 0)
+            {
+                return Math.Clamp((double)_bytesDownloaded / _totalBytes * 100.0, 0, 100);
+            }
+
+            if (IsMedia && _segmentProgresses.Count > 0)
+            {
+                var sum = 0.0;
+
+                foreach (var segment in _segmentProgresses)
+                {
+                    sum += segment.Percent;
+                }
+
+                return Math.Clamp(sum / _segmentProgresses.Count, 0, 100);
+            }
+
+            return 0;
+        }
+    }
 
     public string ProgressText =>
-        _totalBytes > 0 ? $"{PercentValue:0.0}%" : "—";
+        _totalBytes > 0 || (IsMedia && _segmentProgresses.Count > 0)
+            ? $"{PercentValue:0.0}%"
+            : "—";
 
     public string SizeText =>
-        _totalBytes > 0 ? ByteSize.Format(_totalBytes) : "—";
+        _totalBytes > 0
+            ? IsMedia && _state != DownloadJobState.Completed
+                ? $"约 {ByteSize.Format(_totalBytes)}"
+                : ByteSize.Format(_totalBytes)
+            : "—";
 
     public string TransferredText =>
         _torrentChecking
             ? $"校验进度 {PercentValue:0.0}%"
             : _totalBytes > 0
-                ? $"{ByteSize.Format(_bytesDownloaded)} / {ByteSize.Format(_totalBytes)}"
-                : ByteSize.Format(_bytesDownloaded);
+                ? IsMedia && _state != DownloadJobState.Completed
+                    ? $"{ByteSize.Format(_bytesDownloaded)} / 约 {ByteSize.Format(_totalBytes)}"
+                    : $"{ByteSize.Format(_bytesDownloaded)} / {ByteSize.Format(_totalBytes)}"
+                : IsMedia
+                    ? $"已下载 {ByteSize.Format(_bytesDownloaded)}"
+                    : ByteSize.Format(_bytesDownloaded);
 
     public string SpeedText =>
         _state == DownloadJobState.Downloading && _bytesPerSecond > 0
@@ -285,7 +313,7 @@ public sealed class DownloadJob : INotifyPropertyChanged
         var downloaded = Math.Max(0, progress.BytesDownloaded);
         var total = progress.TotalBytes is { } reportedTotal && reportedTotal >= 0
             ? reportedTotal
-            : _totalBytes;
+            : IsMedia ? 0 : _totalBytes;
         var bytesChanged = downloaded != _bytesDownloaded;
         var totalChanged = total != _totalBytes;
         var speedChanged = progress.BytesPerSecond != _bytesPerSecond;
@@ -298,7 +326,7 @@ public sealed class DownloadJob : INotifyPropertyChanged
         _eta = progress.Eta;
         _activeConnections = progress.ActiveConnections;
 
-        var segmentsChanged = UpdateSegmentProgresses(progress.Segments);
+        var (segmentsChanged, segmentContentChanged) = UpdateSegmentProgresses(progress.Segments);
 
         // Only the values a progress tick actually changed. The WPF bindings and
         // MainViewModel subscribe to these names; raising the other twenty per
@@ -328,6 +356,11 @@ public sealed class DownloadJob : INotifyPropertyChanged
         if (connectionsChanged)
         {
             Raise(nameof(ActiveConnections));
+        }
+
+        if (segmentContentChanged)
+        {
+            Raise(nameof(SegmentProgresses));
         }
 
         if (segmentsChanged)
@@ -411,41 +444,31 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(CanOpen));
     }
 
-    /// <summary>Returns true only when the number or shape of the segments changed.</summary>
-    private bool UpdateSegmentProgresses(IReadOnlyList<DownloadSegmentProgress>? progressSegments)
+    /// <summary>
+    /// Returns whether the segment shape or any segment value changed. The shape
+    /// drives the summary text; the content drives the chunk bar.
+    /// </summary>
+    private (bool ShapeChanged, bool ContentChanged) UpdateSegmentProgresses(
+        IReadOnlyList<DownloadSegmentProgress>? progressSegments)
     {
         if (progressSegments is null)
         {
-            return false;
+            return (false, false);
         }
 
         var ordered = progressSegments.OrderBy(segment => segment.Index).ToArray();
         var shapeChanged = _segmentProgresses.Count != ordered.Length ||
-                           _segmentProgresses.Where((segment, index) => segment.Index != ordered[index].Index ||
+                           _segmentProgresses.Where((segment, index) =>
+                               segment.Index != ordered[index].Index ||
                                segment.TotalBytes != ordered[index].TotalBytes).Any();
+        var contentChanged = shapeChanged ||
+                             _segmentProgresses.Where((segment, index) =>
+                                 !segment.Equals(ordered[index])).Any();
 
-        if (shapeChanged)
-        {
-            _segmentProgresses.Clear();
-            foreach (var segment in ordered)
-            {
-                _segmentProgresses.Add(segment);
-            }
-
-            return true;
-        }
-
-        for (var index = 0; index < ordered.Length; index++)
-        {
-            // Records compare by value. Replacing an unchanged item still raises
-            // a Replace notification and rebinds that mini progress bar.
-            if (!_segmentProgresses[index].Equals(ordered[index]))
-            {
-                _segmentProgresses[index] = ordered[index];
-            }
-        }
-
-        return false;
+        // One snapshot per tick instead of one collection notification per
+        // segment: a long media playlist can carry thousands of parts.
+        _segmentProgresses = ordered;
+        return (shapeChanged, contentChanged);
     }
 
     private void Raise([CallerMemberName] string? name = null) =>

@@ -64,6 +64,120 @@ public class MediaDownloaderTests
     }
 
     [Fact]
+    public async Task Hls_progress_reports_chunks_and_an_estimated_total()
+    {
+        using var temp = new TempDirectory();
+        var seg0 = new byte[4096];
+        var seg1 = new byte[4096];
+        Random.Shared.NextBytes(seg0);
+        Random.Shared.NextBytes(seg1);
+
+        var handler = new MediaRouteHandler(new Dictionary<string, byte[]>
+        {
+            ["/video.m3u8"] = Utf8(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4.0,
+                seg0.ts
+                #EXTINF:4.0,
+                seg1.ts
+                #EXT-X-ENDLIST
+                """),
+            ["/seg0.ts"] = seg0,
+            ["/seg1.ts"] = seg1,
+        });
+
+        using var client = new HttpClient(handler);
+        var reports = new List<DownloadProgress>();
+        var gate = new object();
+
+        await MediaDownloader.DownloadAsync(
+            client,
+            Request(Path.Combine(temp.Path, "chunked")),
+            ManifestKind.Hls,
+            Probe(),
+            onProgress: progress =>
+            {
+                lock (gate)
+                {
+                    reports.Add(progress);
+                }
+            },
+            CancellationToken.None);
+
+        DownloadProgress final;
+        lock (gate)
+        {
+            final = reports.OrderByDescending(report => report.BytesDownloaded).First();
+        }
+
+        Assert.Equal(8192, final.BytesDownloaded);
+        Assert.Equal(8192, final.TotalBytes);
+        Assert.NotNull(final.Segments);
+        Assert.Equal(2, final.Segments!.Count);
+        Assert.All(final.Segments, segment => Assert.Equal(100, segment.Percent));
+    }
+
+    [Fact]
+    public async Task Hls_progress_reports_every_real_segment_regardless_of_connections()
+    {
+        using var temp = new TempDirectory();
+        var routes = new Dictionary<string, byte[]>
+        {
+            ["/video.m3u8"] = Utf8(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4.0,
+                s0.ts
+                #EXTINF:4.0,
+                s1.ts
+                #EXTINF:4.0,
+                s2.ts
+                #EXTINF:4.0,
+                s3.ts
+                #EXT-X-ENDLIST
+                """),
+        };
+
+        for (var index = 0; index < 4; index++)
+        {
+            routes[$"/s{index}.ts"] = new byte[1024];
+        }
+
+        var handler = new MediaRouteHandler(routes);
+        using var client = new HttpClient(handler);
+        var reports = new List<DownloadProgress>();
+        var gate = new object();
+
+        await MediaDownloader.DownloadAsync(
+            client,
+            Request(Path.Combine(temp.Path, "lanes"), connections: 2),
+            ManifestKind.Hls,
+            Probe(),
+            onProgress: progress =>
+            {
+                lock (gate)
+                {
+                    reports.Add(progress);
+                }
+            },
+            CancellationToken.None);
+
+        DownloadProgress final;
+        lock (gate)
+        {
+            final = reports.OrderByDescending(report => report.BytesDownloaded).First();
+        }
+
+        Assert.Equal(4096, final.BytesDownloaded);
+        Assert.Equal(4096, final.TotalBytes);
+        Assert.NotNull(final.Segments);
+        Assert.Equal(4, final.Segments!.Count);
+    }
+
+    [Fact]
     public async Task Hls_aes128_segments_are_decrypted()
     {
         using var temp = new TempDirectory();
@@ -213,10 +327,14 @@ public class MediaDownloaderTests
         Assert.DoesNotContain("/v0.ts", handler.RequestedPaths);
     }
 
-    private static DownloadRequest Request(string target, Uri? url = null) => new()
+    private static DownloadRequest Request(
+        string target,
+        Uri? url = null,
+        int connections = 8) => new()
     {
         Url = url ?? ManifestUrl,
         TargetPath = target,
+        Connections = connections,
     };
 
     private static ProbeResult Probe(
