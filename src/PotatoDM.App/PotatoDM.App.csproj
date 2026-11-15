@@ -10,6 +10,13 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <AssemblyName>PotatoDM</AssemblyName>
     <ApplicationIcon>Assets\PotatoDM.ico</ApplicationIcon>
+    <!-- Mixed-DPI multi-monitor setups need PerMonitorV2, otherwise WPF
+         bitmap-scales the whole window when it moves to a different monitor.
+         WFAC010 is the WinForms analyzer; it assumes WinForms owns DPI through
+         Application.SetHighDpiMode, but this is a WPF app that only borrows
+         NotifyIcon, and WPF still reads DPI awareness from the manifest. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
