@@ -1,4 +1,5 @@
 using PotatoDM.AppCore.Models;
+using PotatoDM.AppCore.Services;
 using PotatoDM.Core.Diagnostics;
 using PotatoDM.Core.Models;
 using PotatoDM.Torrent;
@@ -26,8 +27,8 @@ public sealed partial class DownloadManager
         var requestOptions = CreateRequestOptions(job.RequestMetadata);
         job.PendingFreshStart = false;
 
-        void OnProgress(object? sender, DownloadProgress progress) =>
-            _ui.Post(() => job.ApplyProgress(progress));
+        var progressUpdates = new UiProgressCoalescer<DownloadProgress>(_ui, job.ApplyProgress);
+        void OnProgress(object? sender, DownloadProgress progress) => progressUpdates.Post(progress);
 
         engine.ProgressChanged += OnProgress;
 
@@ -76,6 +77,7 @@ public sealed partial class DownloadManager
                 result = await engine.DownloadAsync(request, cancellation.Token);
             }
 
+            progressUpdates.Stop();
             await CompleteJobAsync(job, result.TargetPath, result.TotalBytes);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -92,6 +94,7 @@ public sealed partial class DownloadManager
         }
         finally
         {
+            progressUpdates.Stop();
             engine.ProgressChanged -= OnProgress;
         }
     }
@@ -106,6 +109,13 @@ public sealed partial class DownloadManager
 
         job.PendingFreshStart = false;
 
+        var progressUpdates = new UiProgressCoalescer<TorrentUiUpdate>(_ui, update =>
+        {
+            job.SetDisplayName(update.Name);
+            job.SetTorrentChecking(update.IsChecking);
+            job.ApplyProgress(update.Progress);
+        });
+
         try
         {
             _ui.Post(job.MarkDownloading);
@@ -119,11 +129,10 @@ public sealed partial class DownloadManager
                     EnableDht = true,
                     EnablePeerExchange = true,
                 },
-                progress => _ui.Post(() =>
-                {
-                    job.SetDisplayName(progress.Name);
-                    job.SetTorrentChecking(progress.IsChecking);
-                    job.ApplyProgress(new DownloadProgress(
+                progress => progressUpdates.Post(new TorrentUiUpdate(
+                    progress.Name,
+                    progress.IsChecking,
+                    new DownloadProgress(
                         progress.BytesDownloaded,
                         progress.TotalBytes > 0 ? progress.TotalBytes : null,
                         progress.DownloadBytesPerSecond,
@@ -132,9 +141,10 @@ public sealed partial class DownloadManager
                             progress.TotalBytes,
                             progress.DownloadBytesPerSecond),
                         progress.ConnectedPeers,
-                        BuildTorrentChunks(progress.BytesDownloaded, progress.TotalBytes)));
-                }),
+                        BuildTorrentChunks(progress.BytesDownloaded, progress.TotalBytes)))),
                 cancellation.Token);
+
+            progressUpdates.Stop();
 
             // Fill the chunk bar completely; some engines stop reporting right
             // before the last byte reaches the file.
@@ -163,6 +173,10 @@ public sealed partial class DownloadManager
             _log.Error($"Torrent job '{job.Id}' ({job.Url}) failed.", ex);
             CleanupAfterTransferFailure(job);
             PostFailure(job, ex.Message);
+        }
+        finally
+        {
+            progressUpdates.Stop();
         }
     }
 
@@ -265,5 +279,62 @@ public sealed partial class DownloadManager
             job.StartOverOnResume = false;
             job.MarkFailed(message);
         });
+    }
+
+    private sealed record TorrentUiUpdate(string Name, bool IsChecking, DownloadProgress Progress);
+
+    /// <summary>
+    /// Keeps at most one dispatcher callback pending per job and applies the
+    /// latest snapshot. A fast engine can otherwise queue more progress callbacks
+    /// than the UI thread drains; every queued callback still costs a full row
+    /// rebind. <see cref="Stop"/> drops a pending snapshot so a late tick cannot
+    /// overwrite the completed or paused state.
+    /// </summary>
+    private sealed class UiProgressCoalescer<T> where T : class
+    {
+        private readonly IUiDispatcher _ui;
+        private readonly Action<T> _apply;
+        private T? _pending;
+        private int _scheduled;
+        private int _stopped;
+
+        public UiProgressCoalescer(IUiDispatcher ui, Action<T> apply)
+        {
+            _ui = ui;
+            _apply = apply;
+        }
+
+        public void Post(T value)
+        {
+            if (Volatile.Read(ref _stopped) != 0)
+            {
+                return;
+            }
+
+            Volatile.Write(ref _pending, value);
+
+            if (Interlocked.Exchange(ref _scheduled, 1) == 0)
+            {
+                _ui.Post(Flush);
+            }
+        }
+
+        public void Stop()
+        {
+            Interlocked.Exchange(ref _stopped, 1);
+            Volatile.Write(ref _pending, null);
+            Interlocked.Exchange(ref _scheduled, 1);
+        }
+
+        private void Flush()
+        {
+            Volatile.Write(ref _scheduled, 0);
+            var pending = Interlocked.Exchange(ref _pending, null);
+
+            if (pending is not null)
+            {
+                _apply(pending);
+            }
+        }
     }
 }

@@ -15,8 +15,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly DownloadManager _manager;
     private readonly Action<string>? _reportError;
+    private static readonly TimeSpan StatusRefreshInterval = TimeSpan.FromMilliseconds(250);
+
     private DownloadJob? _selectedJob;
     private string _statusText = "就绪";
+    private DateTimeOffset _lastStatusRefresh;
 
     public MainViewModel(DownloadManager manager, Action<string>? reportError = null)
     {
@@ -223,9 +226,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         switch (e.PropertyName)
         {
+            // Command availability only changes with state, so byte-level progress
+            // must not re-query six commands on every tick.
             case nameof(DownloadJob.State):
-            case nameof(DownloadJob.BytesPerSecond):
-            case nameof(DownloadJob.BytesDownloaded):
             case nameof(DownloadJob.CanPause):
             case nameof(DownloadJob.CanResume):
             case nameof(DownloadJob.CanRestart):
@@ -233,7 +236,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 RaiseCommandStates();
                 UpdateStatus();
                 break;
+            case nameof(DownloadJob.BytesPerSecond):
+            case nameof(DownloadJob.BytesDownloaded):
+                UpdateStatusIfDue();
+                break;
         }
+    }
+
+    private void UpdateStatusIfDue()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (now - _lastStatusRefresh < StatusRefreshInterval)
+        {
+            return;
+        }
+
+        _lastStatusRefresh = now;
+        UpdateStatus();
     }
 
     private void RaiseCommandStates()

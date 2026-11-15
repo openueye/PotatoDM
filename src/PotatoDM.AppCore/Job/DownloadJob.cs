@@ -282,18 +282,59 @@ public sealed class DownloadJob : INotifyPropertyChanged
 
     public void ApplyProgress(DownloadProgress progress)
     {
-        _bytesDownloaded = Math.Max(0, progress.BytesDownloaded);
+        var downloaded = Math.Max(0, progress.BytesDownloaded);
+        var total = progress.TotalBytes is { } reportedTotal && reportedTotal >= 0
+            ? reportedTotal
+            : _totalBytes;
+        var bytesChanged = downloaded != _bytesDownloaded;
+        var totalChanged = total != _totalBytes;
+        var speedChanged = progress.BytesPerSecond != _bytesPerSecond;
+        var etaChanged = progress.Eta != _eta;
+        var connectionsChanged = progress.ActiveConnections != _activeConnections;
 
-        if (progress.TotalBytes is { } total && total >= 0)
-        {
-            _totalBytes = total;
-        }
-
+        _bytesDownloaded = downloaded;
+        _totalBytes = total;
         _bytesPerSecond = progress.BytesPerSecond;
         _eta = progress.Eta;
         _activeConnections = progress.ActiveConnections;
-        UpdateSegmentProgresses(progress.Segments);
-        RaiseAll();
+
+        var segmentsChanged = UpdateSegmentProgresses(progress.Segments);
+
+        // Only the values a progress tick actually changed. The WPF bindings and
+        // MainViewModel subscribe to these names; raising the other twenty per
+        // tick made every row re-query commands and recompute the status line.
+        if (bytesChanged || totalChanged)
+        {
+            Raise(nameof(BytesDownloaded));
+            Raise(nameof(TotalBytes));
+            Raise(nameof(PercentValue));
+            Raise(nameof(ProgressText));
+            Raise(nameof(SizeText));
+            Raise(nameof(TransferredText));
+        }
+
+        if (speedChanged)
+        {
+            Raise(nameof(BytesPerSecond));
+            Raise(nameof(SpeedText));
+        }
+
+        if (etaChanged)
+        {
+            Raise(nameof(Eta));
+            Raise(nameof(EtaText));
+        }
+
+        if (connectionsChanged)
+        {
+            Raise(nameof(ActiveConnections));
+        }
+
+        if (segmentsChanged)
+        {
+            Raise(nameof(HasSegmentProgress));
+            Raise(nameof(SegmentSummary));
+        }
     }
 
     public void MarkCompleted(long totalBytes)
@@ -370,11 +411,12 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(CanOpen));
     }
 
-    private void UpdateSegmentProgresses(IReadOnlyList<DownloadSegmentProgress>? progressSegments)
+    /// <summary>Returns true only when the number or shape of the segments changed.</summary>
+    private bool UpdateSegmentProgresses(IReadOnlyList<DownloadSegmentProgress>? progressSegments)
     {
         if (progressSegments is null)
         {
-            return;
+            return false;
         }
 
         var ordered = progressSegments.OrderBy(segment => segment.Index).ToArray();
@@ -390,13 +432,20 @@ public sealed class DownloadJob : INotifyPropertyChanged
                 _segmentProgresses.Add(segment);
             }
 
-            return;
+            return true;
         }
 
         for (var index = 0; index < ordered.Length; index++)
         {
-            _segmentProgresses[index] = ordered[index];
+            // Records compare by value. Replacing an unchanged item still raises
+            // a Replace notification and rebinds that mini progress bar.
+            if (!_segmentProgresses[index].Equals(ordered[index]))
+            {
+                _segmentProgresses[index] = ordered[index];
+            }
         }
+
+        return false;
     }
 
     private void Raise([CallerMemberName] string? name = null) =>
