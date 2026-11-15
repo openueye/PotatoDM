@@ -6,11 +6,12 @@
         MinHeight="620" MinWidth="780"
         WindowStartupLocation="CenterOwner"
         Icon="Assets/PotatoDM.ico"
-        Background="{StaticResource PageBrush}">
+        Style="{StaticResource AppWindow}"
+        Background="{DynamicResource PageBrush}">
     <Window.Resources>
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="20" />
@@ -18,22 +19,22 @@
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
         </Style>
         <Style x:Key="Muted" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
         <Style x:Key="Badge" TargetType="Border">
             <Setter Property="CornerRadius" Value="9" />
             <Setter Property="Padding" Value="8,2" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Background" Value="#F1F0EC" />
+            <Setter Property="Background" Value="{DynamicResource BadgeBackgroundBrush}" />
         </Style>
         <Style x:Key="BadgeText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
         </Style>
         <Style x:Key="SmallButton" TargetType="Button"
                BasedOn="{StaticResource {x:Type Button}}">
@@ -47,7 +48,7 @@
             <Setter Property="FontFamily" Value="Consolas" />
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="Padding" Value="8,6" />
-            <Setter Property="Background" Value="#FBFAF7" />
+            <Setter Property="Background" Value="{DynamicResource ReadOnlyInputBrush}" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
         </Style>
@@ -55,19 +56,19 @@
             <Setter Property="Width" Value="22" />
             <Setter Property="Height" Value="22" />
             <Setter Property="CornerRadius" Value="11" />
-            <Setter Property="Background" Value="{StaticResource BrandBrush}" />
+            <Setter Property="Background" Value="{DynamicResource BrandBrush}" />
             <Setter Property="VerticalAlignment" Value="Top" />
         </Style>
         <Style x:Key="StepText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
         <Style x:Key="StepNumberText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="#201506" />
+            <Setter Property="Foreground" Value="{DynamicResource BrandOnBrush}" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -80,9 +81,9 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal">
-                <Border Width="42" Height="42" CornerRadius="11" Background="#FFF0CF" Margin="0,0,12,0">
+                <Border Width="42" Height="42" CornerRadius="11" Background="{DynamicResource LogoBackgroundBrush}" Margin="0,0,12,0">
                     <TextBlock Text="↓" FontSize="24" FontWeight="SemiBold"
-                               Foreground="{StaticResource BrandDarkBrush}"
+                               Foreground="{DynamicResource BrandDarkBrush}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <StackPanel VerticalAlignment="Center">
@@ -116,8 +117,8 @@
                        TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis" />
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button Content="卸载集成" Click="OnUninstall" Margin="0,0,8,0" />
-                <Button Content="安装 / 修复"
+                <Button Content="卸载集成(_U)" Click="OnUninstall" Margin="0,0,8,0" />
+                <Button Content="安装 / 修复(_I)"
                         Click="OnInstall"
                         IsDefault="True"
                         Style="{StaticResource PrimaryButton}"
@@ -178,12 +179,12 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="ExtensionIdBox"
+                                <TextBox x:Name="ExtensionIdBox" AutomationProperties.Name="扩展 ID"
                                          Style="{StaticResource PathBox}"
                                          ToolTip="安装后生成，也可在浏览器扩展页查看" />
                                 <Button x:Name="CopyExtensionIdButton"
                                         Grid.Column="1"
-                                        Content="复制"
+                                        Content="复制(_C)"
                                         Style="{StaticResource SmallButton}"
                                         Margin="8,0,0,0"
                                         Click="OnCopyExtensionId" />
@@ -222,13 +223,13 @@
                                 </Border>
                             </StackPanel>
                             <Button Grid.Column="2"
-                                    Content="打开扩展页"
+                                    Content="打开扩展页(_O)"
                                     Style="{StaticResource SmallButton}"
                                     Click="OnOpenChrome" />
                         </Grid>
 
                         <Border Height="1"
-                                Background="{StaticResource BorderBrush}"
+                                Background="{DynamicResource BorderBrush}"
                                 Margin="0,16" />
 
                         <Grid>
@@ -256,7 +257,7 @@
                                 </Border>
                             </StackPanel>
                             <Button Grid.Column="2"
-                                    Content="打开扩展页"
+                                    Content="打开扩展页(_O)"
                                     Style="{StaticResource SmallButton}"
                                     Click="OnOpenEdge" />
                         </Grid>
@@ -321,7 +322,7 @@
                             <TextBlock Text="位置"
                                        Style="{StaticResource SectionTitle}"
                                        VerticalAlignment="Center" />
-                            <Button Content="打开扩展目录"
+                            <Button Content="打开扩展目录(_F)"
                                     Style="{StaticResource SmallButton}"
                                     Click="OnOpenFolder"
                                     HorizontalAlignment="Right" />
@@ -335,11 +336,11 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ChromiumPathBox"
+                            <TextBox x:Name="ChromiumPathBox" AutomationProperties.Name="扩展目录"
                                      Style="{StaticResource PathBox}" />
                             <Button x:Name="CopyChromiumPathButton"
                                     Grid.Column="1"
-                                    Content="复制"
+                                    Content="复制(_C)"
                                     Style="{StaticResource SmallButton}"
                                     Margin="8,0,0,0"
                                     Click="OnCopyChromiumPath" />
@@ -353,11 +354,11 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ManifestPathBox"
+                            <TextBox x:Name="ManifestPathBox" AutomationProperties.Name="宿主清单路径"
                                      Style="{StaticResource PathBox}" />
                             <Button x:Name="CopyManifestPathButton"
                                     Grid.Column="1"
-                                    Content="复制"
+                                    Content="复制(_C)"
                                     Style="{StaticResource SmallButton}"
                                     Margin="8,0,0,0"
                                     Click="OnCopyManifestPath" />

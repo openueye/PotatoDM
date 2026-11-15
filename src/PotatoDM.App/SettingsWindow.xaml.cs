@@ -57,6 +57,15 @@ public partial class SettingsWindow : Window
         CloseToTrayBox.IsChecked = settings.CloseToTray;
         StartMinimizedBox.IsChecked = settings.StartMinimized;
         LaunchAtStartupBox.IsChecked = settings.LaunchAtStartup;
+
+        ThemeBox.ItemsSource = new[]
+        {
+            new KeyValuePair<AppTheme, string>(AppTheme.System, "跟随系统"),
+            new KeyValuePair<AppTheme, string>(AppTheme.Light, "浅色"),
+            new KeyValuePair<AppTheme, string>(AppTheme.Dark, "深色"),
+        };
+        ThemeBox.SelectedValue = settings.Theme;
+
         AutomaticBox.Checked += (_, _) => ConnectionsBox.IsEnabled = false;
         AutomaticBox.Unchecked += (_, _) => ConnectionsBox.IsEnabled = true;
         ConnectionsBox.IsEnabled = !settings.AutomaticConnections;
@@ -115,6 +124,7 @@ public partial class SettingsWindow : Window
         _settings.CloseToTray = CloseToTrayBox.IsChecked == true;
         _settings.StartMinimized = StartMinimizedBox.IsChecked == true;
         _settings.LaunchAtStartup = LaunchAtStartupBox.IsChecked == true;
+        _settings.Theme = ThemeBox.SelectedValue is AppTheme theme ? theme : AppTheme.System;
         DialogResult = true;
     }
 

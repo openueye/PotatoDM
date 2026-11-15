@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using PotatoDM.App.Services;
 using PotatoDM.AppCore.Job;
 using PotatoDM.AppCore.Models;
@@ -31,6 +32,8 @@ public partial class App : System.Windows.Application
     private CancellationTokenSource? _lifetime;
     private TrayIconService? _trayIcon;
     private FileLogSink? _log;
+    private AppSettings? _settings;
+    private bool _themeEventsSubscribed;
     private bool _isExiting;
 
     public bool IsExiting => _isExiting;
@@ -62,6 +65,11 @@ public partial class App : System.Windows.Application
             _settingsStore = new SettingsStore(log: _log);
 
             var settings = await _settingsStore.LoadAsync();
+            _settings = settings;
+
+            ThemeManager.Apply(settings.Theme);
+            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+            _themeEventsSubscribed = true;
 
             _manager = new DownloadManager(
                 new DispatcherUiDispatcher(Dispatcher),
@@ -118,6 +126,12 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_themeEventsSubscribed)
+        {
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            _themeEventsSubscribed = false;
+        }
+
         _trayIcon?.Dispose();
         _trayIcon = null;
         var server = Interlocked.Exchange(ref _pipeServer, null);
@@ -271,6 +285,18 @@ public partial class App : System.Windows.Application
     {
         ActivateWindow();
         _window?.OpenAddDownloadDialog();
+    }
+
+    private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.Color) ||
+            _settings?.Theme != AppTheme.System ||
+            Dispatcher.HasShutdownStarted)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() => ThemeManager.Apply(AppTheme.System));
     }
 
     private static void Log(string message)

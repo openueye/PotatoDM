@@ -1,21 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
-using Brush = System.Windows.Media.Brush;
-using Color = System.Windows.Media.Color;
-using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 using PotatoDM.App.Services;
 
 namespace PotatoDM.App;
 
 public partial class BrowserIntegrationWindow : Window
 {
-    private static readonly Brush OkBackground = Frozen(0xE7, 0xF4, 0xEC);
-    private static readonly Brush OkForeground = Frozen(0x1F, 0x6B, 0x3A);
-    private static readonly Brush AttentionBackground = Frozen(0xFD, 0xF0, 0xE6);
-    private static readonly Brush AttentionForeground = Frozen(0xA2, 0x55, 0x1F);
-    private static readonly Brush NeutralBackground = Frozen(0xF1, 0xF0, 0xEC);
-    private static readonly Brush NeutralForeground = Frozen(0x77, 0x71, 0x6A);
-
     public BrowserIntegrationWindow()
     {
         InitializeComponent();
@@ -86,22 +76,17 @@ public partial class BrowserIntegrationWindow : Window
     {
         label.Text = text;
 
-        var (background, foreground) = state switch
+        var (backgroundKey, foregroundKey) = state switch
         {
-            BadgeState.Ok => (OkBackground, OkForeground),
-            BadgeState.Attention => (AttentionBackground, AttentionForeground),
-            _ => (NeutralBackground, NeutralForeground),
+            BadgeState.Ok => ("StateSuccessBackgroundBrush", "StateSuccessForegroundBrush"),
+            BadgeState.Attention => ("StateWarningBackgroundBrush", "StateWarningForegroundBrush"),
+            _ => ("StateNeutralBackgroundBrush", "StateNeutralForegroundBrush"),
         };
 
-        badge.Background = background;
-        label.Foreground = foreground;
-    }
-
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
+        // Resource references, not snapshots: a theme switch while this window
+        // is open must repaint the badges too.
+        badge.SetResourceReference(Border.BackgroundProperty, backgroundKey);
+        label.SetResourceReference(TextBlock.ForegroundProperty, foregroundKey);
     }
 
     private void OnInstall(object sender, RoutedEventArgs e)

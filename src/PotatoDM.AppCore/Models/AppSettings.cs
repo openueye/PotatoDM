@@ -50,6 +50,9 @@ public sealed class AppSettings
 
     public bool LaunchAtStartup { get; set; }
 
+    /// <summary>Light, dark, or follow Windows.</summary>
+    public AppTheme Theme { get; set; } = AppTheme.System;
+
     public AppSettings Clone() => new()
     {
         Connections = Connections,
@@ -66,6 +69,7 @@ public sealed class AppSettings
         CloseToTray = CloseToTray,
         StartMinimized = StartMinimized,
         LaunchAtStartup = LaunchAtStartup,
+        Theme = Theme,
     };
 
     public void Normalize()
@@ -76,5 +80,10 @@ public sealed class AppSettings
         MaxConcurrentJobs = Math.Clamp(MaxConcurrentJobs, 1, 32);
         MaxBytesPerSecond = Math.Max(0, MaxBytesPerSecond);
         DownloadFolder = string.IsNullOrWhiteSpace(DownloadFolder) ? null : DownloadFolder.Trim();
+
+        if (!Enum.IsDefined(typeof(AppTheme), Theme))
+        {
+            Theme = AppTheme.System;
+        }
     }
 }
