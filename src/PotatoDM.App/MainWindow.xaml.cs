@@ -1,11 +1,13 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using PotatoDM.App.Services;
 using PotatoDM.App.ViewModels;
 using PotatoDM.AppCore.Job;
 using PotatoDM.AppCore.Models;
 using PotatoDM.AppCore.Services;
+using PotatoDM.Torrent;
 
 namespace PotatoDM.App;
 
@@ -32,9 +34,24 @@ public partial class MainWindow : Window
         _viewModel = new MainViewModel(manager, ReportError);
         _viewModel.AddRequested += OnAddRequested;
         _viewModel.RemoveRequested += OnRemoveRequested;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
         DataContext = _viewModel;
+
+        // InputBindings are not in the visual tree, so a XAML {Binding} there
+        // never sees the window's DataContext; bind the commands directly.
+        InputBindings.Add(new KeyBinding(
+            _viewModel.AddCommand, Key.N, ModifierKeys.Control));
+        InputBindings.Add(new KeyBinding(
+            _viewModel.RemoveCommand, Key.Delete, ModifierKeys.None));
+        InputBindings.Add(new KeyBinding(
+            _viewModel.TogglePauseCommand, Key.Space, ModifierKeys.None));
     }
+
+    /// <summary>Raised when the tray icon's tooltip should follow the status line.</summary>
+    public event Action<string>? StatusTextChanged;
+
+    public string StatusText => _viewModel.StatusText;
 
     private async void OnAddRequested(object? sender, EventArgs e)
         => await ShowAddDownloadDialogAsync();
@@ -84,17 +101,18 @@ public partial class MainWindow : Window
 
     private async void OnRemoveRequested(object? sender, EventArgs e)
     {
-        var job = _viewModel.SelectedJob;
+        var jobs = _viewModel.SelectedJobs;
 
-        if (job is null)
+        if (jobs.Count == 0)
         {
             return;
         }
 
-        var completed = job.State == DownloadJobState.Completed;
-        var message = completed
-            ? $"从列表中移除“{job.DisplayName}”，并清理该任务的过程文件？已下载的文件会保留。"
-            : $"移除“{job.DisplayName}”？整个任务文件夹（含未完成的数据）将被删除。";
+        var message = jobs.Count == 1
+            ? jobs[0].State == DownloadJobState.Completed
+                ? $"从列表中移除“{jobs[0].DisplayName}”，并清理该任务的过程文件？已下载的文件会保留。"
+                : $"移除“{jobs[0].DisplayName}”？整个任务文件夹（含未完成的数据）将被删除。"
+            : $"移除选中的 {jobs.Count} 个任务？已完成的任务只清理过程文件；未完成的任务整个文件夹会被删除。";
 
         var answer = MessageBox.Show(
             this,
@@ -108,14 +126,89 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _manager.RemoveAsync(job, deletePartialData: !completed);
+        try
+        {
+            foreach (var job in jobs.ToArray())
+            {
+                await _manager.RemoveAsync(job, deletePartialData: job.State != DownloadJobState.Completed);
+            }
+        }
+        catch (Exception ex)
+        {
+            ReportError("移除任务失败：" + ex.Message);
+        }
+    }
+
+    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // The grid can raise this while InitializeComponent is still running,
+        // before DataContext (and therefore the view model) is attached.
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.SetSelection(JobsGrid.SelectedItems.OfType<DownloadJob>().ToArray());
+        }
+    }
+
+    private void OnGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Right-clicking a row must act on that row, not on the previous selection.
+        if (ItemsControl.ContainerFromElement(JobsGrid, e.OriginalSource as DependencyObject)
+            is DataGridRow row)
+        {
+            JobsGrid.SelectedItem = row.Item;
+        }
     }
 
     private void OnGridDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (_viewModel.SelectedJob is { CanOpen: true })
+        if (_viewModel.SelectedJob is not { } job)
+        {
+            return;
+        }
+
+        if (job.CanOpen)
         {
             _viewModel.OpenFileCommand.Execute(null);
+            return;
+        }
+
+        if (job.State == DownloadJobState.Failed)
+        {
+            MessageBox.Show(
+                this,
+                string.IsNullOrWhiteSpace(job.Error) ? "该任务已失败。" : job.Error,
+                "下载失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.F && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
+        // DataGrid handles Space for selection, so intercept it before the grid
+        // gets the key; text fields must still receive ordinary spaces.
+        if (e.Key == Key.Space &&
+            Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase &&
+            _viewModel.TogglePauseCommand.CanExecute(null))
+        {
+            _viewModel.TogglePauseCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.StatusText))
+        {
+            StatusTextChanged?.Invoke(_viewModel.StatusText);
         }
     }
 
@@ -145,6 +238,7 @@ public partial class MainWindow : Window
             {
                 await _settingsStore.SaveAsync(_settings);
                 StartupRegistration.SetEnabled(_settings.LaunchAtStartup);
+                ThemeManager.Apply(_settings.Theme);
             }
             catch (Exception ex)
             {
