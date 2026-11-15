@@ -50,8 +50,13 @@ internal static class MediaHttp
                     return text;
                 }
             }
-            catch (Exception ex) when (attempt < retry.MaxRetries && IsRetryable(ex, cancellationToken))
+            catch (Exception ex) when (IsRetryable(ex, cancellationToken))
             {
+                if (attempt >= retry.MaxRetries)
+                {
+                    throw RetryExhausted(ex, uri, attempt + 1);
+                }
+
                 await Task.Delay(retry.GetDelay(attempt, null), cancellationToken).ConfigureAwait(false);
             }
         }
@@ -68,10 +73,25 @@ internal static class MediaHttp
         {
             HttpDownloadException http => http.IsTransient,
             HttpRequestException => true,
+            // HttpClient reports its own timeout as TaskCanceledException. The
+            // cancellation check above separates it from a user cancel.
+            TaskCanceledException => true,
             IOException io => io.InnerException is System.Net.Sockets.SocketException,
             _ => false,
         };
     }
+
+    /// <summary>
+    /// Converts a failure that survived every retry into the shared exit-code
+    /// classification. The direct-download path already reports an unreachable
+    /// host as 9; without this the media path fell through to 1 (unclassified).
+    /// </summary>
+    internal static HttpDownloadException RetryExhausted(Exception error, Uri uri, int attempts) =>
+        error as HttpDownloadException
+        ?? new HttpDownloadException(
+            $"Media request for '{uri}' failed after {attempts} attempts.",
+            isTransient: true,
+            error);
 
     internal static HttpDownloadException CreateHttpException(HttpResponseMessage response, Uri uri)
     {

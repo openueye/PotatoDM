@@ -121,13 +121,26 @@ public sealed class RandomAccessOutputFile
         }
     }
 
-    public ValueTask WriteAsync(
+    public async ValueTask WriteAsync(
         ReadOnlyMemory<byte> buffer,
         long offset,
         CancellationToken cancellationToken)
     {
         var handle = _handle ?? throw new ObjectDisposedException(nameof(RandomAccessOutputFile));
-        return RandomAccess.WriteAsync(handle, buffer, offset, cancellationToken);
+
+        try
+        {
+            await RandomAccess
+                .WriteAsync(handle, buffer, offset, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (IOException ex)
+        {
+            // A local write failure (disk full, device removed) is not a transient
+            // network error: retrying it burns the remaining attempts and then
+            // reports exit 9 ("try again later") instead of 6 (file access).
+            throw new FileAccessException($"Could not write to working file '{_workingPath}'.", ex);
+        }
     }
 
     public void FlushToDisk()

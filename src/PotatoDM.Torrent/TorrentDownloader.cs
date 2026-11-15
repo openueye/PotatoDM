@@ -147,6 +147,14 @@ public static class TorrentDownloader
 
         var totalBytes = files.Sum(file => file.FileSize);
 
+        // libtorrent writes straight into the download directory, so every name
+        // it will materialize must be checked before AttachTorrent, not after the
+        // transfer when the result path is built.
+        ValidateTorrentPaths(
+            request.DownloadDirectory,
+            info.Metadata.Name,
+            files.Select(file => file.Path));
+
         using var client = new LibtorrentClient(CreateLibtorrentSettings(request));
 
         LibtorrentManager manager;
@@ -449,6 +457,10 @@ public static class TorrentDownloader
 
             var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
             var torrent = MonoTorrent.Torrent.Load(bytes);
+            ValidateTorrentPaths(
+                downloadDirectory,
+                torrent.Name,
+                torrent.Files.Select(file => file.Path));
             return await engine
                 .AddAsync(torrent, downloadDirectory, settings)
                 .ConfigureAwait(false);
@@ -533,15 +545,44 @@ public static class TorrentDownloader
         return new TorrentDownloadResult(directory, true, torrent.Size, torrent.Name);
     }
 
+    /// <summary>
+    /// Rejects metadata that could escape the download root before any engine is
+    /// allowed to create files from it. A torrent name is one component; each
+    /// file path may contain directories, but every component is checked.
+    /// </summary>
+    internal static void ValidateTorrentPaths(
+        string downloadDirectory,
+        string torrentName,
+        IEnumerable<string> filePaths)
+    {
+        _ = CombineRelative(downloadDirectory, torrentName);
+
+        foreach (var path in filePaths)
+        {
+            _ = CombineRelative(downloadDirectory, path);
+        }
+    }
+
     private static string CombineRelative(string root, string relative)
     {
-        var parts = relative
-            .Replace('\\', '/')
+        var normalized = relative.Replace('\\', '/');
+
+        // RemoveEmptyEntries would turn "/etc/passwd" into a harmless relative
+        // path, so absolute forms are rejected before splitting.
+        if (Path.IsPathRooted(relative) || normalized.StartsWith('/'))
+        {
+            throw new TorrentException("The torrent contains an absolute path.");
+        }
+
+        var parts = normalized
             .Split('/', StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var part in parts)
         {
-            if (part is "." or "..")
+            // A colon makes the component drive-relative ("C:evil") or otherwise
+            // invalid on Windows; combine-and-prefix alone would not catch it on
+            // platforms that treat it as an ordinary file name.
+            if (part is "." or ".." || part.Contains(':'))
             {
                 throw new TorrentException("The torrent contains an unsafe relative path.");
             }

@@ -77,8 +77,13 @@ public static partial class MediaDownloader
                     return NormalizeKey(raw, keyUri);
                 }
             }
-            catch (Exception ex) when (attempt < retry.MaxRetries && IsRetryable(ex, cancellationToken))
+            catch (Exception ex) when (IsRetryable(ex, cancellationToken))
             {
+                if (attempt >= retry.MaxRetries)
+                {
+                    throw MediaHttp.RetryExhausted(ex, keyUri, attempt + 1);
+                }
+
                 await Task.Delay(retry.GetDelay(attempt, null), cancellationToken).ConfigureAwait(false);
             }
         }
@@ -205,8 +210,13 @@ public static partial class MediaDownloader
                     .ConfigureAwait(false);
                 return;
             }
-            catch (Exception ex) when (attempt < retry.MaxRetries && IsRetryable(ex, cancellationToken))
+            catch (Exception ex) when (IsRetryable(ex, cancellationToken))
             {
+                if (attempt >= retry.MaxRetries)
+                {
+                    throw MediaHttp.RetryExhausted(ex, job.Uri, attempt + 1);
+                }
+
                 var retryAfter = ex.Data.Contains("RetryAfter") &&
                                  ex.Data["RetryAfter"] is TimeSpan delay
                     ? delay
