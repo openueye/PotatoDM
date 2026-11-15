@@ -73,6 +73,10 @@ public partial class MainWindow : Window
         {
             _settings.Connections = dialog.Connections;
         }
+
+        // Remember the folder the user actually chose, not just the connection count.
+        _settings.DownloadFolder = dialog.Folder;
+
         try
         {
             await _settingsStore.SaveAsync(_settings);
@@ -82,20 +86,30 @@ public partial class MainWindow : Window
             ReportError("保存设置失败：" + ex.Message);
         }
 
-        try
+        var failures = new List<string>();
+
+        foreach (var source in dialog.Sources)
         {
-            if (dialog.IsMagnet)
+            try
             {
-                await _manager.AddTorrentAsync(dialog.Source, dialog.Folder);
+                if (TorrentSource.IsMagnet(source))
+                {
+                    await _manager.AddTorrentAsync(source, dialog.Folder);
+                }
+                else
+                {
+                    await _manager.AddAsync(new Uri(source), dialog.Folder, dialog.Connections);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                await _manager.AddAsync(new Uri(dialog.Source), dialog.Folder, dialog.Connections);
+                failures.Add($"{source}\n  {ex.Message}");
             }
         }
-        catch (Exception ex)
+
+        if (failures.Count > 0)
         {
-            ReportError("无法添加下载：" + ex.Message);
+            ReportError("部分下载添加失败：\n\n" + string.Join("\n\n", failures));
         }
     }
 
