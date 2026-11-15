@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:PotatoDM.App.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="土豆下载器" Icon="Assets/PotatoDM.ico" Height="760" Width="1180"
-        MinHeight="600" MinWidth="980" WindowStartupLocation="CenterScreen"
+        MinHeight="600" MinWidth="1100" WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Closing="OnWindowClosing" PreviewKeyDown="OnPreviewKeyDown"
         StateChanged="OnWindowStateChanged"

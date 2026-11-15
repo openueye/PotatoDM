@@ -25,9 +25,7 @@ public sealed class JobRegistryStore
 
     /// <param name="filePath">Overrides the default registry path; used by tests.</param>
     /// <param name="log">
-    /// Optional sink. A damaged registry used to mean the task list came back empty
-    /// with no explanation, and the next save overwrote the damaged file so nothing
-    /// could be recovered afterwards. Logged at Warning with the path.
+    /// Optional sink for reporting registry recovery failures.
     /// </param>
     public JobRegistryStore(string? filePath = null, ILogSink? log = null)
     {
@@ -53,10 +51,8 @@ public sealed class JobRegistryStore
 
             if (records is null)
             {
-                _log.Warning(
-                    $"Job registry '{FilePath}' contains no list; the task list starts empty " +
-                    "and the next save will overwrite the file.");
-
+                _log.Warning($"Job registry '{FilePath}' contains no list.");
+                PreserveDamagedRegistry();
                 return new List<JobRecord>();
             }
 
@@ -64,26 +60,53 @@ public sealed class JobRegistryStore
         }
         catch (JsonException ex)
         {
-            // A damaged registry must not prevent the app from starting.
-            _log.Warning(
-                $"Job registry '{FilePath}' is not valid JSON; the task list starts empty and " +
-                "the next save will overwrite the file.",
-                ex);
-
+            _log.Warning($"Job registry '{FilePath}' is not valid JSON.", ex);
+            PreserveDamagedRegistry();
             return new List<JobRecord>();
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _log.Warning(
-                $"Job registry '{FilePath}' could not be read; the task list starts empty for " +
-                "this session.",
-                ex);
+            if (!File.Exists(FilePath))
+            {
+                return new List<JobRecord>();
+            }
 
+            _log.Warning($"Job registry '{FilePath}' could not be read.", ex);
+            PreserveDamagedRegistry();
             return new List<JobRecord>();
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>Location of the original registry preserved after a failed parse.</summary>
+    public string? DamagedBackupPath { get; private set; }
+
+    /// <summary>
+    /// True when a damaged or unreadable registry could not be moved aside. The
+    /// original stays at <see cref="FilePath"/>; the app still starts empty but
+    /// the caller should tell the user before a later save replaces it.
+    /// </summary>
+    public bool DamagedRegistryUnpreserved { get; private set; }
+
+    private void PreserveDamagedRegistry()
+    {
+        var backup = FilePath + ".damaged-" + Guid.NewGuid().ToString("N");
+
+        try
+        {
+            File.Move(FilePath, backup);
+            DamagedBackupPath = backup;
+            _log.Warning($"Damaged job registry preserved at '{backup}'.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            DamagedRegistryUnpreserved = true;
+            _log.Error(
+                $"Damaged job registry could not be preserved; the original remains at '{FilePath}'.",
+                ex);
         }
     }
 

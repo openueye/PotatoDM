@@ -71,15 +71,30 @@ public partial class App : System.Windows.Application
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
             _themeEventsSubscribed = true;
 
+            var registry = new JobRegistryStore(log: _log);
             _manager = new DownloadManager(
                 new DispatcherUiDispatcher(Dispatcher),
-                new JobRegistryStore(log: _log),
+                registry,
                 new DownloadEngineFactory(_log),
                 settings,
                 new DpapiCookieProtector(),
                 log: _log);
 
             await _manager.InitializeAsync();
+            if (registry.DamagedBackupPath is { } backupPath)
+            {
+                MessageBox.Show(
+                    "任务清单损坏或无法读取，无法恢复原有任务。原文件已保存在：\n" + backupPath +
+                    "\n\n请保留该文件以便恢复。新任务将保存到新清单。",
+                    "任务清单恢复失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            else if (registry.DamagedRegistryUnpreserved)
+            {
+                MessageBox.Show(
+                    "任务清单损坏或无法读取，且无法将其备份。原文件仍位于：\n" + registry.FilePath +
+                    "\n\n应用将以空任务列表启动。请先手动备份该文件；在修复前，新任务可能无法保存。",
+                    "任务清单恢复失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
 
             _window = new MainWindow(
                 _manager,

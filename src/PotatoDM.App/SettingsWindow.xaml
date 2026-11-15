@@ -197,6 +197,7 @@
                     <TextBlock Text="浏览器接管" FontSize="24" FontWeight="Bold" />
                     <TextBlock Text="让 Chrome / Edge 的下载交给土豆下载器"
                                Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0" />
+                    <TextBlock Text="安装和卸载会立即生效；其他设置需要点击保存。" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource MutedBrush}" />
                     <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                         <StackPanel>
                             <Border x:Name="BrowserStatusPill" Style="{StaticResource StatusPill}">

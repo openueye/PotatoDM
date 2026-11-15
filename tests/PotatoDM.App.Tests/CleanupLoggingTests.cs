@@ -44,7 +44,8 @@ public class CleanupLoggingTests
 
         try
         {
-            await manager.RemoveAsync(job, deletePartialData: true).WaitAsync(TimeSpan.FromSeconds(30));
+            var remaining = await manager.RemoveAsync(job, deletePartialData: true).WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Equal(processDirectory, remaining);
         }
         finally
         {

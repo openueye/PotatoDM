@@ -46,8 +46,6 @@ public partial class MainWindow : Window
             _viewModel.AddCommand, Key.N, ModifierKeys.Control));
         InputBindings.Add(new KeyBinding(
             _viewModel.RemoveCommand, Key.Delete, ModifierKeys.None));
-        InputBindings.Add(new KeyBinding(
-            _viewModel.TogglePauseCommand, Key.Space, ModifierKeys.None));
     }
 
     /// <summary>Raised when the tray icon's tooltip should follow the status line.</summary>
@@ -144,9 +142,20 @@ public partial class MainWindow : Window
 
         try
         {
+            var leftovers = new List<string>();
             foreach (var job in jobs.ToArray())
             {
-                await _manager.RemoveAsync(job, deletePartialData: job.State != DownloadJobState.Completed);
+                var remaining = await _manager.RemoveAsync(job, deletePartialData: job.State != DownloadJobState.Completed);
+                if (remaining is not null)
+                {
+                    leftovers.Add(remaining);
+                }
+            }
+
+            if (leftovers.Count > 0)
+            {
+                ReportError("任务已移除，但部分文件未能删除。请关闭占用文件的程序后手动清理：\n\n" +
+                    string.Join("\n", leftovers));
             }
         }
         catch (Exception ex)
@@ -212,7 +221,10 @@ public partial class MainWindow : Window
         // DataGrid handles Space for selection, so intercept it before the grid
         // gets the key; text fields must still receive ordinary spaces.
         if (e.Key == Key.Space &&
-            Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase &&
+            Keyboard.Modifiers == ModifierKeys.None &&
+            JobsGrid.IsKeyboardFocusWithin &&
+            (Keyboard.FocusedElement is System.Windows.Controls.DataGrid or
+                System.Windows.Controls.DataGridRow or System.Windows.Controls.DataGridCell) &&
             _viewModel.TogglePauseCommand.CanExecute(null))
         {
             _viewModel.TogglePauseCommand.Execute(null);

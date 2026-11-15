@@ -285,7 +285,7 @@ public sealed partial class DownloadManager
         return Task.CompletedTask;
     }
 
-    public async Task RemoveAsync(DownloadJob job, bool deletePartialData)
+    public async Task<string?> RemoveAsync(DownloadJob job, bool deletePartialData)
     {
         CancellationTokenSource? probe;
 
@@ -320,16 +320,33 @@ public sealed partial class DownloadManager
         // Removing a job always removes its process artifacts. Unfinished
         // payloads go too; a completed file stays unless the caller explicitly
         // removes it elsewhere.
-        if (deletePartialData && job.State != DownloadJobState.Completed)
+        var deleteWholeTask = deletePartialData && job.State != DownloadJobState.Completed;
+        await Task.Run(() =>
         {
-            DeleteTaskDirectory(job);
-        }
-        else
-        {
-            DeleteProcessArtifacts(job);
-        }
+            if (deleteWholeTask)
+            {
+                DeleteTaskDirectory(job);
+            }
+            else
+            {
+                DeleteProcessArtifacts(job);
+            }
+        });
 
         RequestRegistrySave();
+        if (!string.IsNullOrEmpty(job.TaskDirectory))
+        {
+            var path = deleteWholeTask ? job.TaskDirectory : job.ProcessDirectory;
+            return Directory.Exists(path) ? path : null;
+        }
+
+        var leftovers = new[] { job.StatePath, job.StatePath + ".bak", job.StatePath + ".tmp",
+            job.StatePath + ".lock", StatePaths.WorkingFor(job.TargetPath),
+            job.IsMedia ? job.TargetPath + MediaDownloader.CacheSuffix : null,
+            job.IsTorrent ? job.TargetPath : null };
+        return leftovers.FirstOrDefault(path => !string.IsNullOrEmpty(path) &&
+            (File.Exists(path) || Directory.Exists(path)));
+
     }
 
     private static bool IsMediaRequest(Uri url, ProbeResult probe) =>

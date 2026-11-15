@@ -203,10 +203,6 @@ public partial class SettingsWindow : Window
         BrowserPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
 
-        var settingsTab = index <= 1;
-        SaveButton.Visibility = settingsTab ? Visibility.Visible : Visibility.Collapsed;
-        CancelButton.Content = settingsTab ? "取消(_C)" : "关闭(_C)";
-
         if (index == 2)
         {
             RefreshBrowserStatus();

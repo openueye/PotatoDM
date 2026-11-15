@@ -33,6 +33,34 @@ public class StoreLoggingTests
         Assert.True(entry is not null, "Nothing was logged for the corrupt registry: " + log.Transcript);
         Assert.Contains(path, entry!.Message);
         Assert.IsAssignableFrom<System.Text.Json.JsonException>(entry.Exception);
+        Assert.NotNull(store.DamagedBackupPath);
+        await store.SaveAsync(Array.Empty<JobRecord>());
+        Assert.Equal("{ this is not json ", await File.ReadAllTextAsync(store.DamagedBackupPath));
+        Assert.Empty(await new JobRegistryStore(path).LoadAsync());
+    }
+
+    [Fact]
+    public async Task A_registry_that_cannot_be_moved_aside_still_starts_empty()
+    {
+        using var temp = new TempDirectory();
+        var path = temp.FileFor("jobs.json");
+        await File.WriteAllTextAsync(path, "{ this is not json ");
+
+        // Readers are allowed, but delete/rename is not, so the store can read
+        // the damaged file and then fail to preserve it.
+        using var hold = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var log = new RecordingLogSink();
+        var store = new JobRegistryStore(path, log);
+
+        Assert.Empty(await store.LoadAsync());
+
+        Assert.Null(store.DamagedBackupPath);
+        Assert.True(store.DamagedRegistryUnpreserved);
+        Assert.True(
+            log.Has(LogLevel.Error, "could not be preserved"),
+            "The unpreserved registry was not logged: " + log.Transcript);
+        Assert.Equal("{ this is not json ", await File.ReadAllTextAsync(path));
     }
 
     [Fact]

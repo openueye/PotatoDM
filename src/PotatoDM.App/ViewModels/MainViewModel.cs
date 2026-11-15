@@ -323,7 +323,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (!File.Exists(path))
+        if (!File.Exists(path) && !Directory.Exists(path))
         {
             _reportError?.Invoke("文件不存在或尚未下载完成。");
             return;
@@ -352,7 +352,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             var target = File.Exists(path)
                 ? $"/select,\"{path}\""
-                : $"\"{Path.GetDirectoryName(path)}\"";
+                : $"\"{(Directory.Exists(path) ? path : Path.GetDirectoryName(path))}\"";
 
             Process.Start(new ProcessStartInfo("explorer.exe", target) { UseShellExecute = true });
         }
