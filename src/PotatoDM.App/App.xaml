@@ -11,6 +11,19 @@
         <SolidColorBrush x:Key="TextBrush" Color="#24221F" />
         <SolidColorBrush x:Key="MutedBrush" Color="#77716A" />
 
+        <!-- State colours are semantic: the status pill and the failed-row text
+             both read them, so a future dark theme only has to replace these. -->
+        <SolidColorBrush x:Key="StateNeutralBackgroundBrush" Color="#F1F0EC" />
+        <SolidColorBrush x:Key="StateNeutralForegroundBrush" Color="#5B6573" />
+        <SolidColorBrush x:Key="StateInfoBackgroundBrush" Color="#E8F1FF" />
+        <SolidColorBrush x:Key="StateInfoForegroundBrush" Color="#1B4F9C" />
+        <SolidColorBrush x:Key="StateSuccessBackgroundBrush" Color="#E7F5EC" />
+        <SolidColorBrush x:Key="StateSuccessForegroundBrush" Color="#1E7A3C" />
+        <SolidColorBrush x:Key="StateWarningBackgroundBrush" Color="#FFF5DD" />
+        <SolidColorBrush x:Key="StateWarningForegroundBrush" Color="#A96308" />
+        <SolidColorBrush x:Key="StateErrorBackgroundBrush" Color="#FDECEC" />
+        <SolidColorBrush x:Key="StateErrorForegroundBrush" Color="#B3261E" />
+
         <Style TargetType="Window">
             <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI" />
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
