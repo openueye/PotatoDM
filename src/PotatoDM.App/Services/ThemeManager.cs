@@ -1,6 +1,8 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security;
 using System.Windows;
+using System.Windows.Interop;
 using Microsoft.Win32;
 using PotatoDM.AppCore.Models;
 
@@ -13,6 +15,7 @@ public static class ThemeManager
         @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 
     private static ResourceDictionary? _current;
+    private static AppTheme _effective = AppTheme.Light;
 
     public static AppTheme EffectiveTheme(AppTheme requested) =>
         requested switch
@@ -71,5 +74,40 @@ public static class ThemeManager
 
         app.Resources.MergedDictionaries.Add(dictionary);
         _current = dictionary;
+        _effective = dark ? AppTheme.Dark : AppTheme.Light;
+
+        foreach (Window window in app.Windows)
+        {
+            ApplyWindowTitleBar(window);
+        }
     }
+
+    /// <summary>
+    /// Makes a native title bar follow the active theme. Windows 10 builds use
+    /// attribute 19; Windows 11 uses 20.
+    /// </summary>
+    public static void ApplyWindowTitleBar(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var useDark = _effective == AppTheme.Dark ? 1 : 0;
+
+        if (DwmSetWindowAttribute(handle, 20, ref useDark, sizeof(int)) != 0)
+        {
+            _ = DwmSetWindowAttribute(handle, 19, ref useDark, sizeof(int));
+        }
+    }
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int attribute,
+        ref int value,
+        int size);
 }

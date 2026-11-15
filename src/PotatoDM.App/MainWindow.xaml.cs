@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using PotatoDM.App.Services;
 using PotatoDM.App.ViewModels;
 using PotatoDM.AppCore.Job;
@@ -243,6 +245,61 @@ public partial class MainWindow : Window
         _ = _exitApplication?.Invoke();
     }
 
+    private void OnMinimize(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void OnMaximizeRestore(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+
+    private void OnCloseWindow(object sender, RoutedEventArgs e) => Close();
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (MaximizeGlyph is null || MaxRestoreButton is null)
+        {
+            return;
+        }
+
+        var maximized = WindowState == WindowState.Maximized;
+        MaximizeGlyph.Text = maximized ? "\uE923" : "\uE922";
+        MaxRestoreButton.ToolTip = maximized ? "还原" : "最大化";
+        System.Windows.Automation.AutomationProperties.SetName(
+            MaxRestoreButton,
+            maximized ? "还原" : "最大化");
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            var round = 2; // DWMWCP_ROUND
+            _ = DwmSetWindowAttribute(handle, 33, ref round, sizeof(int));
+
+            var noBorder = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+            _ = DwmSetWindowAttribute(handle, 34, ref noBorder, sizeof(int));
+        }
+        catch (DllNotFoundException)
+        {
+            // Older Windows builds do not have the Windows 11 corner attribute.
+        }
+        catch (EntryPointNotFoundException)
+        {
+        }
+    }
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int attribute,
+        ref int value,
+        int size);
+
     private async void OnSettings(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(_settings) { Owner = this };
@@ -261,12 +318,6 @@ public partial class MainWindow : Window
 
             _manager.RefreshQueue();
         }
-    }
-
-    private void OnBrowserIntegration(object sender, RoutedEventArgs e)
-    {
-        var window = new BrowserIntegrationWindow { Owner = this };
-        window.ShowDialog();
     }
 
     private void ReportError(string message)

@@ -255,7 +255,7 @@ async function init() {
       setStatus("ready", "客户端已就绪");
       hint.hidden = true;
     } else if (response && response.error === "app_unavailable") {
-      setStatus("down", "客户端未运行（开始下载时会自动启动）");
+      setStatus("down", response.message || "客户端未运行（开始下载时会自动启动）");
       hint.hidden = true;
     } else {
       setStatus("missing", "未检测到浏览器宿主");

@@ -263,7 +263,11 @@ async function pingHost() {
 
   return response.ok
     ? { ok: true }
-    : { ok: false, error: response.error || "host_unavailable" };
+    : {
+        ok: false,
+        error: response.error || "host_unavailable",
+        message: response.message,
+      };
 }
 
 // ---------------------------------------------------------------------------

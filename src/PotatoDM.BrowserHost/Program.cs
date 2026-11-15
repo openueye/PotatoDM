@@ -112,6 +112,7 @@ internal static class Program
     private static async Task<BrowserResponse> PingAsync()
     {
         var started = DateTimeOffset.UtcNow;
+        var accessDenied = false;
 
         while (DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(2))
         {
@@ -129,8 +130,9 @@ internal static class Program
                 }
             }
             catch (Exception ex) when (
-                ex is IOException or TimeoutException or OperationCanceledException)
+                ex is IOException or TimeoutException or OperationCanceledException or UnauthorizedAccessException)
             {
+                accessDenied |= ex is UnauthorizedAccessException;
             }
 
             await Task.Delay(RetryDelay).ConfigureAwait(false);
@@ -138,7 +140,9 @@ internal static class Program
 
         return BrowserResponse.Failure(
             "app_unavailable",
-            "土豆下载器未运行（开始下载时会自动启动）。");
+            accessDenied
+                ? "土豆下载器以管理员身份运行，浏览器无法连接。请以普通用户启动。"
+                : "土豆下载器未运行（开始下载时会自动启动）。");
     }
 
     private static async Task<BrowserResponse> ForwardAsync(
@@ -148,6 +152,7 @@ internal static class Program
         var budget = ReadBudget();
         var deadline = DateTimeOffset.UtcNow + budget;
         var launchAttempted = false;
+        var accessDenied = false;
         string? lastError = null;
 
         while (DateTimeOffset.UtcNow < deadline)
@@ -166,8 +171,9 @@ internal static class Program
                 }
             }
             catch (Exception ex) when (
-                ex is IOException or TimeoutException or OperationCanceledException)
+                ex is IOException or TimeoutException or OperationCanceledException or UnauthorizedAccessException)
             {
+                accessDenied |= ex is UnauthorizedAccessException;
                 lastError = ex.GetType().Name;
             }
 
@@ -190,7 +196,9 @@ internal static class Program
         Log("app unavailable: " + (lastError ?? "pipe not reachable"));
         return BrowserResponse.Failure(
             "app_unavailable",
-            "无法连接土豆下载器，已交给浏览器下载。");
+            accessDenied
+                ? "土豆下载器以管理员身份运行，浏览器无法连接。请以普通用户启动。"
+                : "无法连接土豆下载器，已交给浏览器下载。");
     }
 
     private static async Task<BrowserResponse?> TrySendAsync(

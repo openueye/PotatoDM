@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
+using PotatoDM.App.Services;
 using PotatoDM.AppCore.Models;
 using PotatoDM.AppCore.Services;
 
@@ -33,6 +34,7 @@ public partial class AddDownloadWindow : Window
 
         TryPrefillFromClipboard();
         Loaded += (_, _) => UrlBox.Focus();
+        SourceInitialized += (_, _) => ThemeManager.ApplyWindowTitleBar(this);
     }
 
     /// <summary>Validated URLs or magnet links, one per pasted line.</summary>

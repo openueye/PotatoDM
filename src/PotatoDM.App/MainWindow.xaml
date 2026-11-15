@@ -3,13 +3,79 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="clr-namespace:PotatoDM.AppCore.Models;assembly=PotatoDM.AppCore"
         xmlns:vm="clr-namespace:PotatoDM.AppCore.Job;assembly=PotatoDM.AppCore"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="土豆下载器" Icon="Assets/PotatoDM.ico" Height="760" Width="1180"
         MinHeight="600" MinWidth="980" WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Closing="OnWindowClosing" PreviewKeyDown="OnPreviewKeyDown"
+        StateChanged="OnWindowStateChanged"
+        WindowStyle="None"
         Style="{StaticResource AppWindow}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="56"
+                            ResizeBorderThickness="6"
+                            GlassFrameThickness="0"
+                            CornerRadius="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource FlatButton}" />
+        <Style x:Key="CaptionGlyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="56" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ButtonPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="CloseCaptionButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#E81123" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#C50F1F" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="CellText" TargetType="TextBlock">
             <Setter Property="Margin" Value="10,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -109,9 +175,11 @@
         </Style>
     </Window.Resources>
 
-    <Grid Background="{DynamicResource PageBrush}">
+    <Border BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="1"
+            Background="{DynamicResource PageBrush}">
+        <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56"/><RowDefinition Height="*"/><RowDefinition Height="36"/>
+            <RowDefinition Height="56"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="216"/><ColumnDefinition Width="*"/>
@@ -122,8 +190,9 @@
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource SeparatorBrush}"
                 BorderThickness="0,0,0,1">
-            <Grid Margin="18,0">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Grid>
+                <Grid Margin="18,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Width="34" Height="34" CornerRadius="9" Margin="0,0,12,0">
                         <Border.Background>
@@ -138,18 +207,37 @@
                     </Border>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="土豆下载器" FontSize="14" FontWeight="SemiBold"/>
-                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource MutedBrush}"
-                                   FontSize="11" Margin="0,1,0,0"/>
                     </StackPanel>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="浏览器集成(_B)" Click="OnBrowserIntegration"
-                            Style="{StaticResource FlatButton}" Margin="0,0,4,0"/>
-                    <Button Content="设置(_S)" Click="OnSettings"
-                            Style="{StaticResource FlatButton}" Margin="0,0,12,0"/>
-                    <Button Content="＋ 新建下载(_N)" Command="{Binding AddCommand}"
-                            Style="{StaticResource PrimaryButton}" Padding="15,8"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                Margin="0,0,140,0"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Button Click="OnSettings" Style="{StaticResource FlatButton}"
+                                FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
+                                Content="&#xE713;" Padding="10,7" Margin="0,0,12,0"
+                                ToolTip="设置" AutomationProperties.Name="设置"/>
+                        <Button Content="＋ 新建下载(_N)" Command="{Binding AddCommand}"
+                                Style="{StaticResource PrimaryButton}" Padding="15,8"/>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Stretch" Orientation="Horizontal">
+                    <Button Style="{StaticResource CaptionButton}" Click="OnMinimize"
+                            ToolTip="最小化" AutomationProperties.Name="最小化"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <TextBlock Text="&#xE921;" Style="{StaticResource CaptionGlyph}" />
+                    </Button>
+                    <Button x:Name="MaxRestoreButton" Style="{StaticResource CaptionButton}"
+                            Click="OnMaximizeRestore" ToolTip="最大化" AutomationProperties.Name="最大化"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <TextBlock x:Name="MaximizeGlyph" Text="&#xE922;" Style="{StaticResource CaptionGlyph}" />
+                    </Button>
+                    <Button Style="{StaticResource CloseCaptionButton}" Click="OnCloseWindow"
+                            ToolTip="关闭" AutomationProperties.Name="关闭"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <TextBlock Text="&#xE8BB;" Style="{StaticResource CaptionGlyph}" />
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
@@ -191,11 +279,6 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <TextBlock Text="提示" Margin="16,20,10,6" FontSize="10.5" FontWeight="SemiBold"
-                           Foreground="{DynamicResource MutedBrush}"/>
-                <TextBlock Text="右键任务可查看更多操作；Space 暂停或继续。"
-                           Margin="16,0,16,0" TextWrapping="Wrap" FontSize="11"
-                           Foreground="{DynamicResource MutedBrush}" LineHeight="17"/>
             </StackPanel>
         </Border>
 
@@ -251,11 +334,6 @@
             <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,14,0,10">
                 <Button Content="暂停(_P)" Command="{Binding PauseCommand}" Style="{StaticResource ToolbarButton}"/>
                 <Button Content="继续(_R)" Command="{Binding ResumeCommand}" Style="{StaticResource ToolbarButton}"/>
-                <Button Content="重新开始(_S)" Command="{Binding RestartCommand}" Style="{StaticResource ToolbarButton}"/>
-                <Border Width="1" Height="16" Background="{DynamicResource SeparatorBrush}" Margin="6,0"/>
-                <Button Content="移除(_D)" Command="{Binding RemoveCommand}" Style="{StaticResource ToolbarButton}"/>
-                <Button Content="打开文件(_O)" Command="{Binding OpenFileCommand}" Style="{StaticResource ToolbarButton}"/>
-                <Button Content="打开文件夹(_F)" Command="{Binding OpenFolderCommand}" Style="{StaticResource ToolbarButton}"/>
             </StackPanel>
 
             <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}"
@@ -427,26 +505,30 @@
                         </Border>
                         <TextBlock Text="{Binding EmptyStateText}" FontSize="15" FontWeight="SemiBold"
                                    HorizontalAlignment="Center" Margin="0,12,0,4"/>
-                        <TextBlock Text="{Binding EmptyStateHint}" Foreground="{DynamicResource MutedBrush}"
-                                   HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
             </Border>
         </Grid>
 
         <!-- Status bar -->
-        <Border Grid.Row="2" Grid.ColumnSpan="2"
+        <Border x:Name="StatusBar" Grid.Row="2" Grid.ColumnSpan="2" Height="36"
                 Background="{DynamicResource Surface2Brush}"
                 BorderBrush="{DynamicResource SeparatorBrush}"
                 BorderThickness="0,1,0,0">
-            <Grid Margin="18,0">
-                <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource MutedBrush}"
-                           VerticalAlignment="Center" FontSize="11"
-                           AutomationProperties.LiveSetting="Polite"/>
-                <TextBlock Text="Ctrl+F 搜索 · 双击已完成任务打开文件"
-                           Foreground="{DynamicResource MutedBrush}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11"/>
-            </Grid>
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasStatusSummary}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource MutedBrush}"
+                       VerticalAlignment="Center" FontSize="11" Margin="18,0"
+                       AutomationProperties.LiveSetting="Polite"/>
         </Border>
-    </Grid>
+        </Grid>
+    </Border>
 </Window>

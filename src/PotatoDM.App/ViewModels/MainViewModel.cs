@@ -174,9 +174,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? "还没有下载任务"
         : "没有匹配的任务";
 
-    public string EmptyStateHint => _manager.Jobs.Count == 0
-        ? "新建任务，或从浏览器把下载交给土豆下载器"
-        : "调整筛选条件或清空搜索词试试";
+    public bool HasStatusSummary => _manager.Jobs.Any(job => job.State is
+        DownloadJobState.Probing or
+        DownloadJobState.Queued or
+        DownloadJobState.Downloading or
+        DownloadJobState.Paused or
+        DownloadJobState.Failed);
 
     public string StatusText
     {
@@ -442,7 +445,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Raise(nameof(VisibleCountText));
         Raise(nameof(FilterTitle));
         Raise(nameof(EmptyStateText));
-        Raise(nameof(EmptyStateHint));
+        Raise(nameof(HasStatusSummary));
     }
 
     private void RaiseCommandStates()

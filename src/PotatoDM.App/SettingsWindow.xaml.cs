@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.Win32;
 using PotatoDM.AppCore.Models;
 using PotatoDM.AppCore.Services;
@@ -69,6 +70,10 @@ public partial class SettingsWindow : Window
         AutomaticBox.Checked += (_, _) => ConnectionsBox.IsEnabled = false;
         AutomaticBox.Unchecked += (_, _) => ConnectionsBox.IsEnabled = true;
         ConnectionsBox.IsEnabled = !settings.AutomaticConnections;
+
+        VersionText.Text = "版本 " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "0.1.0");
+        Loaded += (_, _) => RefreshBrowserStatus();
+        SourceInitialized += (_, _) => ThemeManager.ApplyWindowTitleBar(this);
     }
 
     private void OnSave(object sender, RoutedEventArgs e)
@@ -182,5 +187,176 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(this, "创建快捷方式失败：" + ex.Message, "土豆下载器", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void OnSectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (GeneralPanel is null || DownloadPanel is null || BrowserPanel is null || AboutPanel is null ||
+            SaveButton is null || CancelButton is null)
+        {
+            return;
+        }
+
+        var index = SectionList.SelectedIndex;
+        GeneralPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+        DownloadPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        BrowserPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        AboutPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
+
+        var settingsTab = index <= 1;
+        SaveButton.Visibility = settingsTab ? Visibility.Visible : Visibility.Collapsed;
+        CancelButton.Content = settingsTab ? "取消(_C)" : "关闭(_C)";
+
+        if (index == 2)
+        {
+            RefreshBrowserStatus();
+        }
+    }
+
+    private void RefreshBrowserStatus()
+    {
+        if (BrowserStatusText is null)
+        {
+            return;
+        }
+
+        var status = BrowserIntegrationInstaller.GetStatus();
+        var ready = status.FullyInstalled;
+        var partiallyInstalled = status.HostPresent && status.SourcePresent;
+
+        BrowserStatusPillText.Text = ready ? "已就绪" : partiallyInstalled ? "待注册" : "未安装";
+        SetPill(
+            BrowserStatusPill,
+            BrowserStatusPillText,
+            ready ? PillState.Ok : PillState.Attention);
+
+        BrowserStatusText.Text = ready
+            ? "扩展已就绪，在浏览器中加载一次即可使用。"
+            : partiallyInstalled
+                ? "宿主与扩展已复制，点击“安装 / 修复”完成注册。"
+                : "尚未安装浏览器接管。";
+
+        var detected = new List<string>();
+        if (status.ChromeDetected) detected.Add("Chrome");
+        if (status.EdgeDetected) detected.Add("Edge");
+        BrowserDetectedText.Text = detected.Count == 0
+            ? "未检测到 Chrome 或 Edge。"
+            : "已检测到 " + string.Join(" / ", detected) + "。";
+
+        BrowserStepText.Text = "安装后，在浏览器扩展页开启开发者模式，加载“扩展目录”中的文件夹。";
+        BrowserStepText.Visibility = ready ? Visibility.Collapsed : Visibility.Visible;
+
+        var elevated = IsElevated();
+        BrowserWarningText.Text = "当前以管理员身份运行，浏览器扩展无法连接；请退出后以普通用户启动。";
+        BrowserWarningText.Visibility = elevated ? Visibility.Visible : Visibility.Collapsed;
+
+        ChromeButton.IsEnabled = status.ChromeDetected;
+        EdgeButton.IsEnabled = status.EdgeDetected;
+
+        ExtensionIdBox.Text = status.ChromeId ?? "（安装后生成）";
+        ChromiumPathBox.Text = status.ChromiumExtensionPath;
+        ManifestPathBox.Text = status.HostManifestPath;
+    }
+
+    private static void SetPill(Border pill, TextBlock text, PillState state)
+    {
+        var (backgroundKey, foregroundKey) = state switch
+        {
+            PillState.Ok => ("StateSuccessBackgroundBrush", "StateSuccessForegroundBrush"),
+            _ => ("StateWarningBackgroundBrush", "StateWarningForegroundBrush"),
+        };
+
+        pill.SetResourceReference(Border.BackgroundProperty, backgroundKey);
+        text.SetResourceReference(TextBlock.ForegroundProperty, foregroundKey);
+    }
+
+    private void OnBrowserInstall(object sender, RoutedEventArgs e) =>
+        Run(BrowserIntegrationInstaller.Install, "安装完成。打开浏览器扩展页即可加载扩展。");
+
+    private void OnBrowserUninstall(object sender, RoutedEventArgs e)
+    {
+        var answer = MessageBox.Show(
+            this,
+            "移除宿主注册并删除已复制的扩展？浏览器中已经加载的扩展需要手动移除。",
+            "土豆下载器",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (answer == MessageBoxResult.Yes)
+        {
+            Run(BrowserIntegrationInstaller.Uninstall, "已移除浏览器集成。");
+        }
+    }
+
+    private void OnOpenChrome(object sender, RoutedEventArgs e) =>
+        Run(() => BrowserIntegrationInstaller.OpenExtensionPage(BrowserKind.Chrome), null);
+
+    private void OnOpenEdge(object sender, RoutedEventArgs e) =>
+        Run(() => BrowserIntegrationInstaller.OpenExtensionPage(BrowserKind.Edge), null);
+
+    private void OnOpenExtensionFolder(object sender, RoutedEventArgs e) =>
+        Run(BrowserIntegrationInstaller.OpenExtensionFolder, null);
+
+    private void OnCopyExtensionId(object sender, RoutedEventArgs e) =>
+        Copy(ExtensionIdBox.Text, "扩展 ID 已复制。");
+
+    private void OnCopyChromiumPath(object sender, RoutedEventArgs e) =>
+        Copy(ChromiumPathBox.Text, "扩展目录已复制。");
+
+    private void OnCopyManifestPath(object sender, RoutedEventArgs e) =>
+        Copy(ManifestPathBox.Text, "宿主清单路径已复制。");
+
+    private void Copy(string text, string message)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.StartsWith('（'))
+        {
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+            BrowserStatusText.Text = message;
+        }
+        catch (Exception ex)
+        {
+            ShowWarning(ex.Message);
+        }
+    }
+
+    private void Run(Action action, string? successMessage)
+    {
+        try
+        {
+            action();
+
+            if (!string.IsNullOrEmpty(successMessage))
+            {
+                MessageBox.Show(this, successMessage, "土豆下载器",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowWarning(ex.Message);
+        }
+
+        RefreshBrowserStatus();
+    }
+
+    private static bool IsElevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity)
+            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    private void ShowWarning(string message) =>
+        MessageBox.Show(this, message, "土豆下载器", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+    private enum PillState
+    {
+        Attention,
+        Ok,
     }
 }
