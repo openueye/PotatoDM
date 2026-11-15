@@ -15,6 +15,10 @@ TestResults/
 *.potatodm-write-*.tmp
 *.torrent
 !tests/**/*.torrent
+# On Windows the ignore matcher follows the case-insensitive filesystem, so
+# "*.torrent" also matches "src/PotatoDM.Torrent" and would silently hide new
+# source files in that project.
+!src/PotatoDM.Torrent/
 /.workbuddy/
 publish/
 # The extension's tests run on node:test with zero dependencies, so nothing should

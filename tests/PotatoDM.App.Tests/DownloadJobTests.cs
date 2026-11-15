@@ -29,6 +29,32 @@ public class DownloadJobTests
     }
 
     [Fact]
+    public void Reapplying_an_identical_progress_snapshot_raises_nothing()
+    {
+        var job = new DownloadJob("job-3", "https://example.test/archive.zip", DateTimeOffset.UtcNow);
+        var progress = new DownloadProgress(
+            BytesDownloaded: 1_500,
+            TotalBytes: 4_000,
+            BytesPerSecond: 2_048,
+            Eta: TimeSpan.FromSeconds(2),
+            ActiveConnections: 2,
+            Segments:
+            [
+                new DownloadSegmentProgress(Index: 0, BytesDownloaded: 1_000, TotalBytes: 2_000),
+                new DownloadSegmentProgress(Index: 1, BytesDownloaded: 500, TotalBytes: 2_000),
+            ]);
+
+        job.ApplyProgress(progress);
+
+        var raised = new List<string?>();
+        job.PropertyChanged += (_, args) => raised.Add(args.PropertyName);
+
+        job.ApplyProgress(progress);
+
+        Assert.Empty(raised);
+    }
+
+    [Fact]
     public void Long_eta_is_shown_in_days()
     {
         var job = new DownloadJob("job-2", "https://example.test/archive.zip", DateTimeOffset.UtcNow);
