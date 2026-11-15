@@ -95,6 +95,11 @@ public partial class App : System.Windows.Application
                 _manager.ResumeAllAsync,
                 ExitApplicationAsync);
 
+            _trayIcon.SetStatus(_window.StatusText);
+            _window.StatusTextChanged += text => _trayIcon?.SetStatus(text);
+            _manager.JobCompleted += OnJobCompleted;
+            _manager.JobFailed += OnJobFailed;
+
             if (!settings.StartMinimized)
             {
                 _window.Show();
@@ -285,6 +290,20 @@ public partial class App : System.Windows.Application
     {
         ActivateWindow();
         _window?.OpenAddDownloadDialog();
+    }
+
+    private void OnJobCompleted(object? sender, DownloadJob job)
+    {
+        _trayIcon?.Notify("下载完成", job.DisplayName, isError: false, ActivateWindow);
+    }
+
+    private void OnJobFailed(object? sender, DownloadJob job)
+    {
+        var detail = string.IsNullOrWhiteSpace(job.Error)
+            ? job.DisplayName
+            : $"{job.DisplayName}\n{job.Error}";
+
+        _trayIcon?.Notify("下载失败", detail, isError: true, ActivateWindow);
     }
 
     private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)

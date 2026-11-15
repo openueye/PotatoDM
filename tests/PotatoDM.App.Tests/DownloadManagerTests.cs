@@ -791,6 +791,53 @@ public class DownloadManagerTests
         Assert.True(job.CanRestart);
     }
 
+    [Fact]
+    public async Task Completion_raises_JobCompleted_with_the_finished_job()
+    {
+        using var temp = new TempDirectory();
+        var folder = Path.Combine(temp.Path, "downloads");
+        var engine = new FakeDownloadEngine
+        {
+            OnDownload = (request, _) => Task.FromResult(new DownloadResult(
+                request.TargetPath ?? string.Empty,
+                4096,
+                DownloadMode.Segmented,
+                TimeSpan.Zero)),
+        };
+        var manager = CreateManager(temp, engine);
+        DownloadJob? completed = null;
+        manager.JobCompleted += (_, job) => completed = job;
+
+        var job = await manager.AddAsync(
+            new Uri("http://example.test/file"), folder, connections: 4);
+
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Same(job, completed);
+    }
+
+    [Fact]
+    public async Task Failure_raises_JobFailed_with_the_failed_job()
+    {
+        using var temp = new TempDirectory();
+        var folder = Path.Combine(temp.Path, "downloads");
+        var engine = new FakeDownloadEngine
+        {
+            OnDownload = (_, _) => Task.FromException<DownloadResult>(
+                new IOException("network failed")),
+        };
+        var manager = CreateManager(temp, engine);
+        DownloadJob? failed = null;
+        manager.JobFailed += (_, job) => failed = job;
+
+        var job = await manager.AddAsync(
+            new Uri("http://example.test/file"), folder, connections: 4);
+
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Same(job, failed);
+    }
+
     private static ConcurrentDictionary<string, TaskCompletionSource> CreateGates(
         params string[] names)
     {
