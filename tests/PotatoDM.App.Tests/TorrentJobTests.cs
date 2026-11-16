@@ -12,6 +12,55 @@ public class TorrentJobTests
     private const string Magnet = "magnet:?xt=urn:btih:" + Hash + "&dn=Ubuntu";
 
     [Fact]
+    public async Task Torrent_progress_distinguishes_metadata_and_peer_connection()
+    {
+        using var temp = new TempDirectory();
+        var sendPeers = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reportedMetadata = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reportedPeers = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manager = CreateManager(temp, new FakeDownloadEngine(), new AppSettings(), async (request, report, token) =>
+        {
+            report?.Invoke(new TorrentProgress("test", 0, 0, 0, 0, 0, false));
+            reportedMetadata.SetResult();
+            await sendPeers.Task.WaitAsync(token);
+            report?.Invoke(new TorrentProgress("test", 100, 0, 0, 0, 0, true));
+            reportedPeers.SetResult();
+            await finish.Task.WaitAsync(token);
+            return new TorrentDownloadResult(request.DownloadDirectory, true, 100, "test");
+        });
+        var job = await manager.AddTorrentAsync(Magnet, temp.Path);
+        await reportedMetadata.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("获取元数据", job.StateText);
+        sendPeers.SetResult();
+        await reportedPeers.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("连接节点", job.StateText);
+        Assert.Contains("0 个节点", job.TransferredText);
+        finish.SetResult();
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+        await manager.FlushRegistryAsync();
+    }
+
+    [Fact]
+    public async Task Torrent_limits_are_passed_to_the_started_task()
+    {
+        using var temp = new TempDirectory();
+        TorrentDownloadRequest? captured = null;
+        var settings = new AppSettings { TorrentDownloadBytesPerSecond = 4096, TorrentUploadBytesPerSecond = 2048 };
+        var manager = CreateManager(temp, new FakeDownloadEngine(), settings, (request, _, _) =>
+        {
+            captured = request;
+            return Task.FromResult(new TorrentDownloadResult(request.DownloadDirectory, true, 0, "test"));
+        });
+        await manager.AddTorrentAsync(Magnet, temp.Path);
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+        Assert.NotNull(captured);
+        Assert.Equal(4096, captured.MaximumDownloadBytesPerSecond);
+        Assert.Equal(2048, captured.MaximumUploadBytesPerSecond);
+        await manager.FlushRegistryAsync();
+    }
+
+    [Fact]
     public async Task Browser_magnet_handoff_queues_a_torrent_job_without_probing()
     {
         using var temp = new TempDirectory();

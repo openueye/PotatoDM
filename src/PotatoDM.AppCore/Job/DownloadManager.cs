@@ -17,6 +17,8 @@ namespace PotatoDM.AppCore.Job;
 /// for progress; this class only owns the list, lifetime and cancellation.
 /// Public mutating members are expected to be called from the UI thread.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The process-lifetime semaphore does not create a wait handle.")]
 public sealed partial class DownloadManager
 {
     private readonly IUiDispatcher _ui;
@@ -43,6 +45,8 @@ public sealed partial class DownloadManager
     private readonly HashSet<string> _removed = new(StringComparer.Ordinal);
     private readonly HashSet<string> _reservedTargets = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _sync = new();
+    private readonly SemaphoreSlim _manualProbeSlots = new(3, 3);
+    private readonly Dictionary<string, (string Folder, int Connections)> _pendingProbes = new();
 
     public DownloadManager(
         IUiDispatcher ui,
@@ -98,21 +102,30 @@ public sealed partial class DownloadManager
     {
         var job = new DownloadJob(Guid.NewGuid().ToString("N"), url.ToString(), DateTimeOffset.UtcNow);
         _jobs.Add(job);
+        _pendingProbes[job.Id] = (folder, connections);
+        await ProbeManualAsync(job, url, folder, connections, cancellationToken);
+        return job;
+    }
 
+    private async Task ProbeManualAsync(DownloadJob job, Uri url, string folder, int connections, CancellationToken cancellationToken)
+    {
+        job.MarkProbing();
         var probeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         // Without this a server that accepts the connection and then never answers
         // leaves the row stuck at "探测中" forever: HttpClient's own default is
         // 100 seconds of *inactivity*, which a slow trickle of headers resets.
-        probeCts.CancelAfter(_manualProbeTimeout);
-
         lock (_sync)
         {
             _cancellations[job.Id] = probeCts;
         }
 
+        var entered = false;
         try
         {
+            await _manualProbeSlots.WaitAsync(probeCts.Token);
+            entered = true;
+            probeCts.CancelAfter(_manualProbeTimeout);
             var engine = _engines.Create();
             var probe = await engine.ProbeAsync(url, CreateRequestOptions(), probeCts.Token);
             var isMedia = IsMediaRequest(url, probe);
@@ -124,7 +137,7 @@ public sealed partial class DownloadManager
 
             if (IsRemoved(job.Id))
             {
-                return job;
+                return;
             }
 
             // The UI always passes a folder. Creating it first makes the
@@ -142,6 +155,7 @@ public sealed partial class DownloadManager
                 isTorrent: false,
                 metadata: null);
 
+            _pendingProbes.Remove(job.Id);
             if (!IsRemoved(job.Id))
             {
                 var selectedConnections = connections > 0
@@ -185,16 +199,16 @@ public sealed partial class DownloadManager
             {
                 _log.Warning($"Manual probe of '{url}' failed.", ex);
                 CleanupAfterFailure(job);
-                PostFailure(job, ex.Message);
+                PostFailure(job, JobFailure.Details(ex), JobFailure.Classify(ex));
             }
         }
         finally
         {
+            if (entered) _manualProbeSlots.Release();
             RemoveProbeCancellation(job.Id, probeCts);
             probeCts.Dispose();
         }
 
-        return job;
     }
 
     /// <summary>
@@ -281,6 +295,11 @@ public sealed partial class DownloadManager
             return Task.CompletedTask;
         }
 
+        if (_pendingProbes.TryGetValue(job.Id, out var pending))
+        {
+            return ProbeManualAsync(job, new Uri(job.Url), pending.Folder, pending.Connections, CancellationToken.None);
+        }
+
         Enqueue(job, _settings.Connections, isResume: false, restart: true);
         return Task.CompletedTask;
     }
@@ -308,6 +327,7 @@ public sealed partial class DownloadManager
         job.RequestCancel();
         await WaitForJobAsync(job.Id, TimeSpan.FromSeconds(15));
 
+        _pendingProbes.Remove(job.Id);
         _jobs.Remove(job);
 
         lock (_sync)

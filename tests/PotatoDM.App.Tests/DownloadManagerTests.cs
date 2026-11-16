@@ -12,6 +12,70 @@ namespace PotatoDM.App.Tests;
 public class DownloadManagerTests
 {
     [Fact]
+    public async Task Batch_adds_are_visible_while_probes_are_limited()
+    {
+        using var temp = new TempDirectory();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var engine = new FakeDownloadEngine();
+        engine.OnProbe = async (url, token) =>
+        {
+            await gate.Task.WaitAsync(token);
+            return new ProbeResult(url, url, 4096, true, null, null, "hello.bin", "application/octet-stream");
+        };
+        var manager = CreateManager(temp, engine);
+        var additions = Enumerable.Range(0, 20)
+            .Select(i => manager.AddAsync(new Uri($"https://example.test/{i}"), temp.Path, 1))
+            .ToArray();
+
+        Assert.Equal(20, manager.Jobs.Count);
+        Assert.Equal(3, engine.ProbeCount);
+        gate.SetResult();
+        await Task.WhenAll(additions);
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+        await manager.FlushRegistryAsync();
+    }
+
+    [Fact]
+    public async Task Failed_probe_retries_in_original_directory_and_registers_once()
+    {
+        using var temp = new TempDirectory();
+        var folder = Path.Combine(temp.Path, "chosen");
+        var engine = new FakeDownloadEngine();
+        engine.OnProbe = (_, _) => throw new IOException("offline");
+        var manager = CreateManager(temp, engine);
+        var job = await manager.AddAsync(new Uri("https://example.test/file"), folder, 4);
+        Assert.True(job.CanRestart);
+        engine.OnProbe = (url, _) => Task.FromResult(new ProbeResult(
+            url, url, 4096, true, null, null, "hello.bin", "application/octet-stream"));
+
+        await manager.RestartAsync(job);
+        Assert.True(await manager.FlushRegistryAsync());
+        await manager.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+
+        Assert.StartsWith(folder, job.TargetPath);
+        Assert.Equal(job.TargetPath, engine.LastDownloadRequest?.TargetPath);
+        var records = await new JobRegistryStore(temp.FileFor("jobs.json")).LoadAsync();
+        Assert.Equal(job.Id, Assert.Single(records).Id);
+    }
+
+    [Fact]
+    public async Task Registry_failure_remains_visible_until_retry_succeeds()
+    {
+        using var temp = new TempDirectory();
+        var path = temp.FileFor("jobs.json");
+        Directory.CreateDirectory(path);
+        var manager = CreateManager(temp, new FakeDownloadEngine());
+        await manager.AddAsync(new Uri("https://example.test/file"), temp.Path, 1);
+
+        Assert.False(await manager.FlushRegistryAsync());
+        Assert.True(manager.RegistrySaveFailed);
+        Directory.Delete(path);
+        Assert.True(await manager.FlushRegistryAsync());
+        Assert.False(manager.RegistrySaveFailed);
+        Assert.Single(await new JobRegistryStore(path).LoadAsync());
+    }
+
+    [Fact]
     public async Task Add_uses_automatic_connections_from_probe_size()
     {
         using var temp = new TempDirectory();

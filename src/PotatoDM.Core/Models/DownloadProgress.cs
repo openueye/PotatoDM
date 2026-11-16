@@ -7,7 +7,8 @@ public sealed record DownloadProgress(
     double BytesPerSecond,
     TimeSpan? Eta,
     int ActiveConnections,
-    IReadOnlyList<DownloadSegmentProgress>? Segments = null)
+    IReadOnlyList<DownloadSegmentProgress>? Segments = null,
+    bool IsFinalizing = false)
 {
     public double? Percent =>
         TotalBytes is > 0 ? Math.Clamp((double)BytesDownloaded / TotalBytes.Value * 100.0, 0, 100) : null;

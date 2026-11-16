@@ -90,7 +90,7 @@ public sealed partial class DownloadManager
             // transfer failure is lost the moment the message box appears.
             _log.Error($"Download job '{job.Id}' ({job.Url}) failed.", ex);
             CleanupAfterTransferFailure(job);
-            PostFailure(job, ex.Message);
+            PostFailure(job, JobFailure.Details(ex), JobFailure.Classify(ex));
         }
         finally
         {
@@ -113,6 +113,7 @@ public sealed partial class DownloadManager
         {
             job.SetDisplayName(update.Name);
             job.SetTorrentChecking(update.IsChecking);
+            job.SetTorrentMetadata(update.HasMetadata);
             job.ApplyProgress(update.Progress);
         });
 
@@ -128,10 +129,13 @@ public sealed partial class DownloadManager
                     ProcessDirectory = NullIfEmpty(job.ProcessDirectory),
                     EnableDht = true,
                     EnablePeerExchange = true,
+                    MaximumDownloadBytesPerSecond = _settings.TorrentDownloadBytesPerSecond,
+                    MaximumUploadBytesPerSecond = _settings.TorrentUploadBytesPerSecond,
                 },
                 progress => progressUpdates.Post(new TorrentUiUpdate(
                     progress.Name,
                     progress.IsChecking,
+                    progress.HasMetadata,
                     new DownloadProgress(
                         progress.BytesDownloaded,
                         progress.TotalBytes > 0 ? progress.TotalBytes : null,
@@ -172,7 +176,7 @@ public sealed partial class DownloadManager
             // is resumable too; keep its payload.
             _log.Error($"Torrent job '{job.Id}' ({job.Url}) failed.", ex);
             CleanupAfterTransferFailure(job);
-            PostFailure(job, ex.Message);
+            PostFailure(job, JobFailure.Details(ex), JobFailure.Classify(ex));
         }
         finally
         {
@@ -265,7 +269,7 @@ public sealed partial class DownloadManager
         });
     }
 
-    private void PostFailure(DownloadJob job, string message)
+    private void PostFailure(DownloadJob job, string message, JobFailureKind kind = JobFailureKind.Other)
     {
         // A failed transfer keeps its sidecar, so report what is actually on disk.
         // Hardcoding true would claim a sidecar for torrent/media jobs, which never
@@ -277,11 +281,11 @@ public sealed partial class DownloadManager
         {
             job.SetHasStateFile(hasStateFile);
             job.StartOverOnResume = false;
-            job.MarkFailed(message);
+            job.MarkFailed(message, kind);
         });
     }
 
-    private sealed record TorrentUiUpdate(string Name, bool IsChecking, DownloadProgress Progress);
+    private sealed record TorrentUiUpdate(string Name, bool IsChecking, bool HasMetadata, DownloadProgress Progress);
 
     /// <summary>
     /// Keeps at most one dispatcher callback pending per job and applies the

@@ -40,6 +40,8 @@ public partial class AddDownloadWindow : Window
     /// <summary>Validated URLs or magnet links, one per pasted line.</summary>
     public IReadOnlyList<string> Sources { get; private set; } = Array.Empty<string>();
 
+    public string? TorrentFile { get; private set; }
+
     public string Folder => FolderBox.Text.Trim();
 
     public int Connections => ConnectionsBox.SelectedValue is int value ? value : 0;
@@ -89,14 +91,31 @@ public partial class AddDownloadWindow : Window
         }
     }
 
+    private void OnChooseTorrent(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "种子文件 (*.torrent)|*.torrent", Title = "选择种子文件" };
+        if (dialog.ShowDialog(this) == true)
+        {
+            TorrentFile = dialog.FileName;
+            TorrentText.Text = TorrentFile;
+        }
+    }
+
     private void OnAccept(object sender, RoutedEventArgs e)
     {
         ErrorText.Visibility = Visibility.Collapsed;
 
-        if (!AddDownloadParser.TryParse(UrlBox.Text, out var sources, out var error))
+        var sources = Array.Empty<string>() as IReadOnlyList<string>;
+        if (!string.IsNullOrWhiteSpace(UrlBox.Text) && !AddDownloadParser.TryParse(UrlBox.Text, out sources, out var error))
         {
             ShowError(error ?? "请输入下载地址。");
             UrlBox.Focus();
+            return;
+        }
+
+        if (sources.Count == 0 && TorrentFile is null)
+        {
+            ShowError("请输入下载地址或选择种子文件。");
             return;
         }
 

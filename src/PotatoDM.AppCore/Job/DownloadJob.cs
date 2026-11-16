@@ -24,6 +24,8 @@ public sealed class DownloadJob : INotifyPropertyChanged
     private TimeSpan? _eta;
     private int _activeConnections;
     private bool _torrentChecking;
+    private bool _torrentHasMetadata;
+    private bool _mediaFinalizing;
     private string? _error;
     private bool _hasStateFile;
     private IReadOnlyList<DownloadSegmentProgress> _segmentProgresses = Array.Empty<DownloadSegmentProgress>();
@@ -72,6 +74,18 @@ public sealed class DownloadJob : INotifyPropertyChanged
 
     public string? Error => _error;
 
+    public JobFailureKind FailureKind { get; private set; }
+    public bool IsFinalizing => _mediaFinalizing && _state == DownloadJobState.Downloading;
+
+    public string FailureSummary => FailureKind switch
+    {
+        JobFailureKind.Authentication => "访问被拒绝，请回原网页重新接管。",
+        JobFailureKind.Storage => "无法写入，请检查目录权限和磁盘空间。",
+        JobFailureKind.MediaTool => "媒体合并失败，请检查 ffmpeg 设置。",
+        JobFailureKind.UnsupportedMedia => "媒体或内容格式不受支持，请查看详情。",
+        _ => string.IsNullOrEmpty(TargetPath) ? "连接失败，请检查网络后重试连接。" : "下载失败，请查看详情并继续。",
+    };
+
     public bool HasStateFile => _hasStateFile;
 
     /// <summary>Immutable snapshot for the visual chunk bar under the total progress.</summary>
@@ -98,6 +112,7 @@ public sealed class DownloadJob : INotifyPropertyChanged
     /// </summary>
     public bool CanResume =>
         _state is DownloadJobState.Paused or DownloadJobState.Failed
+        && FailureKind != JobFailureKind.UnsupportedMedia
         && (_hasStateFile || IsMedia || IsTorrent || StartOverOnResume);
 
     /// <summary>
@@ -113,7 +128,10 @@ public sealed class DownloadJob : INotifyPropertyChanged
     public bool CanRestart =>
         !IsTorrent
         && !IsMedia
+        && FailureKind != JobFailureKind.UnsupportedMedia
         && _state is DownloadJobState.Failed or DownloadJobState.Paused;
+
+    public string RestartLabel => string.IsNullOrEmpty(TargetPath) ? "重试连接" : "重新开始";
 
     public string DisplayName =>
         !string.IsNullOrWhiteSpace(_displayName)
@@ -147,7 +165,9 @@ public sealed class DownloadJob : INotifyPropertyChanged
         }
     }
 
-    public string ProgressText =>
+    public string ProgressText => _mediaFinalizing && _state == DownloadJobState.Downloading
+        ? "合并中"
+        :
         _totalBytes > 0 || (IsMedia && _segmentProgresses.Count > 0)
             ? $"{PercentValue:0.0}%"
             : "—";
@@ -162,6 +182,8 @@ public sealed class DownloadJob : INotifyPropertyChanged
     public string TransferredText =>
         _torrentChecking
             ? $"校验进度 {PercentValue:0.0}%"
+            : IsTorrent && _state == DownloadJobState.Downloading
+                ? $"{ByteSize.Format(_bytesDownloaded)} / {(_totalBytes > 0 ? ByteSize.Format(_totalBytes) : "—")} · {_activeConnections} 个节点"
             : _totalBytes > 0
                 ? IsMedia && _state != DownloadJobState.Completed
                     ? $"{ByteSize.Format(_bytesDownloaded)} / 约 {ByteSize.Format(_totalBytes)}"
@@ -184,7 +206,10 @@ public sealed class DownloadJob : INotifyPropertyChanged
     {
         DownloadJobState.Probing => "探测中",
         DownloadJobState.Queued => "排队中",
-        DownloadJobState.Downloading => _torrentChecking ? "校验中" : "下载中",
+        DownloadJobState.Downloading => _mediaFinalizing ? "合并中" :
+            IsMedia ? "下载分片" : IsTorrent ?
+                _torrentChecking ? "校验中" : !_torrentHasMetadata ? "获取元数据" :
+                _activeConnections == 0 ? "连接节点" : "下载中" : "下载中",
         DownloadJobState.Paused => "已暂停",
         DownloadJobState.Completed => "已完成",
         DownloadJobState.Failed => "失败",
@@ -273,6 +298,14 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(DisplayName));
     }
 
+    public void MarkProbing()
+    {
+        _state = DownloadJobState.Probing;
+        _error = null;
+        FailureKind = JobFailureKind.Other;
+        RaiseAll();
+    }
+
     public void MarkQueued()
     {
         _state = DownloadJobState.Queued;
@@ -280,7 +313,10 @@ public sealed class DownloadJob : INotifyPropertyChanged
         _eta = null;
         _activeConnections = 0;
         _torrentChecking = false;
+        _torrentHasMetadata = false;
+        _mediaFinalizing = false;
         _error = null;
+        FailureKind = JobFailureKind.Other;
         RaiseAll();
     }
 
@@ -308,8 +344,22 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(TransferredText));
     }
 
+    internal void SetTorrentMetadata(bool hasMetadata)
+    {
+        if (_torrentHasMetadata == hasMetadata) return;
+        _torrentHasMetadata = hasMetadata;
+        Raise(nameof(StateText));
+    }
+
     public void ApplyProgress(DownloadProgress progress)
     {
+        if (_mediaFinalizing != progress.IsFinalizing)
+        {
+            _mediaFinalizing = progress.IsFinalizing;
+            Raise(nameof(StateText));
+            Raise(nameof(ProgressText));
+            Raise(nameof(IsFinalizing));
+        }
         var downloaded = Math.Max(0, progress.BytesDownloaded);
         var total = progress.TotalBytes is { } reportedTotal && reportedTotal >= 0
             ? reportedTotal
@@ -356,6 +406,8 @@ public sealed class DownloadJob : INotifyPropertyChanged
         if (connectionsChanged)
         {
             Raise(nameof(ActiveConnections));
+            if (IsTorrent) Raise(nameof(StateText));
+            if (IsTorrent) Raise(nameof(TransferredText));
         }
 
         if (segmentContentChanged)
@@ -395,12 +447,13 @@ public sealed class DownloadJob : INotifyPropertyChanged
         RaiseAll();
     }
 
-    public void MarkFailed(string message)
+    public void MarkFailed(string message, JobFailureKind kind = JobFailureKind.Other)
     {
         _bytesPerSecond = 0;
         _eta = null;
         _activeConnections = 0;
         _error = message;
+        FailureKind = kind;
         _state = DownloadJobState.Failed;
         RaiseAll();
     }
@@ -420,6 +473,7 @@ public sealed class DownloadJob : INotifyPropertyChanged
     {
         Raise(nameof(State));
         Raise(nameof(StateText));
+        Raise(nameof(IsFinalizing));
         Raise(nameof(TargetPath));
         Raise(nameof(StatePath));
         Raise(nameof(DisplayName));
@@ -429,6 +483,8 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(Eta));
         Raise(nameof(ActiveConnections));
         Raise(nameof(Error));
+        Raise(nameof(FailureKind));
+        Raise(nameof(FailureSummary));
         Raise(nameof(HasStateFile));
         Raise(nameof(HasSegmentProgress));
         Raise(nameof(SegmentSummary));
@@ -441,6 +497,7 @@ public sealed class DownloadJob : INotifyPropertyChanged
         Raise(nameof(CanPause));
         Raise(nameof(CanResume));
         Raise(nameof(CanRestart));
+        Raise(nameof(RestartLabel));
         Raise(nameof(CanOpen));
     }
 

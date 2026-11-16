@@ -85,7 +85,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public IReadOnlyList<KeyValuePair<JobFilter, string>> Filters { get; } = new[]
     {
         new KeyValuePair<JobFilter, string>(JobFilter.All, "全部"),
-        new KeyValuePair<JobFilter, string>(JobFilter.Downloading, "下载中"),
+        new KeyValuePair<JobFilter, string>(JobFilter.Downloading, "未完成"),
         new KeyValuePair<JobFilter, string>(JobFilter.Completed, "已完成"),
         new KeyValuePair<JobFilter, string>(JobFilter.Failed, "失败"),
     };
@@ -164,7 +164,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string FilterTitle => _filter switch
     {
-        JobFilter.Downloading => "下载中",
+        JobFilter.Downloading => "未完成",
         JobFilter.Completed => "已完成",
         JobFilter.Failed => "失败",
         _ => "全部下载",
@@ -272,6 +272,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task RestartAsync()
     {
+        if (ActiveJobs.Any(job => job.CanRestart && !string.IsNullOrEmpty(job.TargetPath)) &&
+            MessageBox.Show("重新开始会丢弃已有下载进度。确定继续吗？", "重新开始下载",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
         foreach (var job in ActiveJobs.Where(job => job.CanRestart).ToArray())
         {
             await _manager.RestartAsync(job);

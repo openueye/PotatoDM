@@ -30,9 +30,9 @@
     <SolidColorBrush x:Key="StateNeutralBackgroundBrush" Color="#F2F2F7" />
     <SolidColorBrush x:Key="StateNeutralForegroundBrush" Color="#6E6E73" />
     <SolidColorBrush x:Key="StateInfoBackgroundBrush" Color="#E8F1FF" />
-    <SolidColorBrush x:Key="StateInfoForegroundBrush" Color="#0071E3" />
+    <SolidColorBrush x:Key="StateInfoForegroundBrush" Color="#005DB9" />
     <SolidColorBrush x:Key="StateSuccessBackgroundBrush" Color="#E7F6EC" />
-    <SolidColorBrush x:Key="StateSuccessForegroundBrush" Color="#1F9D55" />
+    <SolidColorBrush x:Key="StateSuccessForegroundBrush" Color="#15733E" />
     <SolidColorBrush x:Key="StateWarningBackgroundBrush" Color="#FFF3E0" />
     <SolidColorBrush x:Key="StateWarningForegroundBrush" Color="#A45F00" />
     <SolidColorBrush x:Key="StateErrorBackgroundBrush" Color="#FDECEC" />

@@ -24,6 +24,8 @@
         <TextBlock Text="支持 HTTP/HTTPS 与 magnet；每行一个，可一次添加多个。Ctrl+Enter 开始下载。"
                    Margin="0,0,0,14"
                    Foreground="{DynamicResource MutedBrush}" />
+        <Button Content="选择种子文件…" Click="OnChooseTorrent" HorizontalAlignment="Left" Margin="0,0,0,12" />
+        <TextBlock x:Name="TorrentText" TextWrapping="Wrap" Margin="0,0,0,8" />
 
         <TextBlock Text="保存到" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
         <Grid Margin="0,6,0,16">

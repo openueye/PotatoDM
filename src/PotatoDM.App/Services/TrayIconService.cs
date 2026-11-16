@@ -7,6 +7,7 @@ public sealed class TrayIconService : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
     private readonly Icon? _ownedIcon;
+    private Action? _notificationClick;
 
     public TrayIconService(
         Action open,
@@ -36,6 +37,13 @@ public sealed class TrayIconService : IDisposable
             Visible = true,
         };
         _icon.DoubleClick += (_, _) => open();
+        _icon.BalloonTipClicked += (_, _) => _notificationClick?.Invoke();
+    }
+
+    public void Notify(string title, string message, Action onClick)
+    {
+        _notificationClick = onClick;
+        _icon.ShowBalloonTip(5000, title, message, Forms.ToolTipIcon.Info);
     }
 
     /// <summary>Mirrors the main window's status line into the tray tooltip.</summary>

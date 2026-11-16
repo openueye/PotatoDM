@@ -35,6 +35,10 @@
                                 <Setter Property="Foreground" Value="{DynamicResource BrandOnBrush}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -122,6 +126,7 @@
                             </StackPanel>
                             <CheckBox x:Name="CloseToTrayBox" Content="关闭主窗口时最小化到托盘" Margin="0,14,0,0" />
                             <CheckBox x:Name="StartMinimizedBox" Content="启动后静默进入托盘" Margin="0,12,0,0" />
+                            <CheckBox x:Name="NotificationsBox" Content="显示下载完成和失败通知" Margin="0,12,0,0" />
                             <CheckBox x:Name="LaunchAtStartupBox" Content="登录 Windows 后自动启动" Margin="0,12,0,0" />
                         </StackPanel>
                     </Border>
@@ -142,12 +147,14 @@
                     <TextBlock Text="目录与连接" Style="{StaticResource SectionTitle}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="默认下载目录" Width="110" VerticalAlignment="Center" />
-                                <TextBox x:Name="DownloadFolderBox" Width="280" VerticalAlignment="Center"
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="默认下载目录" Grid.ColumnSpan="2" Margin="0,0,0,6" />
+                                <TextBox x:Name="DownloadFolderBox" Grid.Row="1" VerticalAlignment="Center"
                                          AutomationProperties.Name="默认下载目录" />
-                                <Button Content="浏览…(_B)" Click="OnBrowseDownloadFolder" Margin="8,0,0,0" />
-                            </StackPanel>
+                                <Button Grid.Row="1" Grid.Column="1" Content="浏览…(_B)" Click="OnBrowseDownloadFolder" Margin="8,0,0,0" />
+                            </Grid>
                             <CheckBox x:Name="AutomaticBox" Content="自动选择连接数" Margin="0,14,0,0" />
                             <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                                 <TextBlock Text="连接数" Width="110" VerticalAlignment="Center" />
@@ -158,18 +165,29 @@
                                 <ComboBox x:Name="JobLimitBox" Width="100" AutomationProperties.Name="同时下载任务数" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                <TextBlock Text="全局限速" Width="110" VerticalAlignment="Center" />
+                                <TextBlock Text="HTTP / 媒体限速" Width="130" VerticalAlignment="Center" />
                                 <TextBox x:Name="SpeedLimitBox" Width="100" VerticalAlignment="Center"
-                                         AutomationProperties.Name="全局限速"
-                                         ToolTip="单位 KiB/s；0 表示不限速。" />
+                                         AutomationProperties.Name="HTTP / 媒体下载限速"
+                                         ToolTip="不适用于 BT。单位 KiB/s；0 表示不限速。" />
                                 <TextBlock Text="KiB/s" Margin="8,0,0,0" VerticalAlignment="Center"
                                            Foreground="{DynamicResource MutedBrush}" />
                             </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <TextBlock Text="BT 下载限速" Width="130" VerticalAlignment="Center" />
+                                <TextBox x:Name="TorrentDownloadLimitBox" Width="100" AutomationProperties.Name="BT 下载限速" />
+                                <TextBlock Text="KiB/s" Margin="8,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <TextBlock Text="BT 上传限速" Width="130" VerticalAlignment="Center" />
+                                <TextBox x:Name="TorrentUploadLimitBox" Width="100" AutomationProperties.Name="BT 上传限速" />
+                                <TextBlock Text="KiB/s" Margin="8,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="BT 限速按任务生效，0 为不限速；新建或重新开始任务时应用。" TextWrapping="Wrap" Margin="0,6,0,0" />
                             <CheckBox x:Name="ProxyBox" Content="使用系统代理" Margin="0,14,0,0" />
                         </StackPanel>
                     </Border>
 
-                    <Expander Header="高级" Margin="0,16,0,0">
+                    <Expander x:Name="DownloadAdvanced" Header="高级" Margin="0,16,0,0">
                         <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
@@ -177,13 +195,15 @@
                                     <ComboBox x:Name="PerJobLimitBox" Width="100" AutomationProperties.Name="每任务连接上限"
                                               ToolTip="单个任务同时建立的连接上限，与连接数取较小者。" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                    <TextBlock Text="ffmpeg 路径" Width="110" VerticalAlignment="Center" />
-                                    <TextBox x:Name="FfmpegPathBox" Width="280" VerticalAlignment="Center"
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="ffmpeg 路径" Grid.ColumnSpan="2" Margin="0,0,0,6" />
+                                    <TextBox x:Name="FfmpegPathBox" Grid.Row="1" VerticalAlignment="Center"
                                              AutomationProperties.Name="ffmpeg 路径"
                                              ToolTip="留空则从 PATH 查找；仅合并分离的音视频轨时需要。" />
-                                    <Button Content="浏览…(_B)" Click="OnBrowseFfmpeg" Margin="8,0,0,0" />
-                                </StackPanel>
+                                    <Button Grid.Row="1" Grid.Column="1" Content="浏览…(_B)" Click="OnBrowseFfmpeg" Margin="8,0,0,0" />
+                                </Grid>
                                 <CheckBox x:Name="DynamicSegmentsBox" Content="动态段拆分（实验）" Margin="0,14,0,0" />
                                 <CheckBox x:Name="SparseFileBox" Content="稀疏工作文件（实验）" Margin="0,12,0,0" />
                             </StackPanel>
@@ -223,7 +243,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Expander Header="高级" Margin="0,16,0,0">
+                    <Expander Header="扩展目录与高级信息" IsExpanded="True" Margin="0,16,0,0">
                         <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                             <StackPanel>
                                 <TextBlock Text="扩展 ID" FontSize="11" Foreground="{DynamicResource MutedBrush}" />

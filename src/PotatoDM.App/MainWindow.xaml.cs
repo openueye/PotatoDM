@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly MainViewModel _viewModel;
     private readonly Func<Task>? _exitApplication;
+    private CancellationTokenSource? _batchProbeCancellation;
 
     public MainWindow(
         DownloadManager manager,
@@ -30,6 +31,8 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _manager = manager;
+        _manager.RegistrySaveFailureChanged += OnRegistrySaveFailureChanged;
+        RegistryWarning.Visibility = _manager.RegistrySaveFailed ? Visibility.Visible : Visibility.Collapsed;
         _settings = settings;
         _settingsStore = settingsStore;
         _exitApplication = exitApplication;
@@ -53,6 +56,28 @@ public partial class MainWindow : Window
 
     public string StatusText => _viewModel.StatusText;
 
+    public void ShowJob(DownloadJob? job)
+    {
+        Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        if (job is null || !_manager.Jobs.Contains(job)) return;
+        _viewModel.Filter = JobFilter.All;
+        _viewModel.SearchText = string.Empty;
+        _viewModel.SelectedJob = job;
+        JobsGrid.ScrollIntoView(job);
+        JobsGrid.Focus();
+    }
+
+    private void OnRegistrySaveFailureChanged(bool failed) =>
+        RegistryWarning.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void OnRetryRegistrySave(object sender, RoutedEventArgs e)
+    {
+        if (!await _manager.FlushRegistryAsync())
+            ReportError("任务列表仍无法保存，请检查存储位置的权限和可用空间。");
+    }
+
     private async void OnAddRequested(object? sender, EventArgs e)
         => await ShowAddDownloadDialogAsync();
 
@@ -61,6 +86,7 @@ public partial class MainWindow : Window
 
     private async Task ShowAddDownloadDialogAsync()
     {
+        if (_batchProbeCancellation is not null) return;
         var dialog = new AddDownloadWindow(_settings) { Owner = this };
 
         if (dialog.ShowDialog() != true)
@@ -68,27 +94,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        _settings.AutomaticConnections = dialog.Connections == 0;
-        if (dialog.Connections > 0)
-        {
-            _settings.Connections = dialog.Connections;
-        }
-
-        // Remember the folder the user actually chose, not just the connection count.
-        _settings.DownloadFolder = dialog.Folder;
-
-        try
-        {
-            await _settingsStore.SaveAsync(_settings);
-        }
-        catch (Exception ex)
-        {
-            ReportError("保存设置失败：" + ex.Message);
-        }
-
         var failures = new List<string>();
+        using var batchCancellation = new CancellationTokenSource();
+        _batchProbeCancellation = batchCancellation;
+        BatchProbeButton.Content = $"已接收 {dialog.Sources.Count} 个链接，点击取消尚未完成的探测";
+        BatchProbeButton.Visibility = dialog.Sources.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        foreach (var source in dialog.Sources)
+        async Task AddSourceAsync(string source)
         {
             try
             {
@@ -98,7 +110,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    await _manager.AddAsync(new Uri(source), dialog.Folder, dialog.Connections);
+                    await _manager.AddAsync(new Uri(source), dialog.Folder, dialog.Connections, batchCancellation.Token);
                 }
             }
             catch (Exception ex)
@@ -107,11 +119,25 @@ public partial class MainWindow : Window
             }
         }
 
+        try { await Task.WhenAll(dialog.Sources.Select(AddSourceAsync)); }
+        finally
+        {
+            _batchProbeCancellation = null;
+            BatchProbeButton.Visibility = Visibility.Collapsed;
+        }
+        if (dialog.TorrentFile is { } torrentFile)
+        {
+            try { await _manager.AddTorrentAsync(torrentFile, dialog.Folder); }
+            catch (Exception ex) { failures.Add($"{torrentFile}\n  {ex.Message}"); }
+        }
+
         if (failures.Count > 0)
         {
             ReportError("部分下载添加失败：\n\n" + string.Join("\n\n", failures));
         }
     }
+
+    private void OnCancelBatchProbe(object sender, RoutedEventArgs e) => _batchProbeCancellation?.Cancel();
 
     private async void OnRemoveRequested(object? sender, EventArgs e)
     {
@@ -199,12 +225,25 @@ public partial class MainWindow : Window
 
         if (job.State == DownloadJobState.Failed)
         {
-            MessageBox.Show(
+            var action = job.FailureKind switch
+            {
+                JobFailureKind.Storage when !string.IsNullOrEmpty(job.TargetPath) => "\n\n打开保存目录？",
+                JobFailureKind.MediaTool => "\n\n已下载的分片（如有）会保留。打开 ffmpeg 设置？",
+                _ => "",
+            };
+            var canAct = action.Length > 0;
+            var result = MessageBox.Show(
                 this,
-                string.IsNullOrWhiteSpace(job.Error) ? "该任务已失败。" : job.Error,
+                job.FailureSummary +
+                (job.FailureKind == JobFailureKind.Other && job.CanResume ? " 可右键选择“继续”。" : "") +
+                (string.IsNullOrWhiteSpace(job.Error) ? "" : "\n\n详细信息：" + job.Error) + action,
                 "下载失败",
-                MessageBoxButton.OK,
+                canAct ? MessageBoxButton.YesNo : MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes && job.FailureKind == JobFailureKind.MediaTool)
+                _ = ShowSettingsAsync(openFfmpeg: true);
+            else if (result == MessageBoxResult.Yes && job.FailureKind == JobFailureKind.Storage)
+                _viewModel.OpenFolderCommand.Execute(null);
         }
     }
 
@@ -312,9 +351,12 @@ public partial class MainWindow : Window
         ref int value,
         int size);
 
-    private async void OnSettings(object sender, RoutedEventArgs e)
+    private async void OnSettings(object sender, RoutedEventArgs e) => await ShowSettingsAsync();
+
+    private async Task ShowSettingsAsync(bool openFfmpeg = false)
     {
         var dialog = new SettingsWindow(_settings) { Owner = this };
+        if (openFfmpeg) dialog.ShowFfmpegSettings();
         if (dialog.ShowDialog() == true)
         {
             try

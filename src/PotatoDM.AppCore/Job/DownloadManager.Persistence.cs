@@ -26,6 +26,11 @@ public sealed partial class DownloadManager
     private long _registryVersion;
 
     private long _persistedVersion;
+    private bool _registrySaveFailed;
+
+    public event Action<bool>? RegistrySaveFailureChanged;
+
+    public bool RegistrySaveFailed { get { lock (_flushLock) return _registrySaveFailed; } }
 
     /// <summary>Restores the job list from the registry and each engine sidecar.</summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -323,11 +328,9 @@ public sealed partial class DownloadManager
 
     /// <summary>
     /// Waits for the coalescing loop to catch up with every change requested so far.
-    /// Write failures are logged and not retried, as before, so this is a durability
-    /// point rather than a guarantee that the file was replaced. Used before
-    /// shutdown, and by tests that read <c>jobs.json</c> directly.
+    /// Returns false if the save failed; a later call retries the pending changes.
     /// </summary>
-    public async Task FlushRegistryAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> FlushRegistryAsync(CancellationToken cancellationToken = default)
     {
         Task loop;
         long target;
@@ -346,7 +349,12 @@ public sealed partial class DownloadManager
             {
                 if (_persistedVersion >= target)
                 {
-                    return;
+                    return true;
+                }
+
+                if (_registrySaveFailed)
+                {
+                    return false;
                 }
 
                 // The loop we awaited had already finished its last pass when the
@@ -383,9 +391,11 @@ public sealed partial class DownloadManager
                 snapshot = _records.ToList();
             }
 
+            var saved = false;
             try
             {
                 await _registry.SaveAsync(snapshot).ConfigureAwait(false);
+                saved = true;
             }
             catch (IOException ex)
             {
@@ -398,6 +408,18 @@ public sealed partial class DownloadManager
 
             lock (_flushLock)
             {
+                var changed = _registrySaveFailed == saved;
+                _registrySaveFailed = !saved;
+                if (changed)
+                {
+                    _ui.Post(() => RegistrySaveFailureChanged?.Invoke(!saved));
+                }
+
+                if (!saved)
+                {
+                    return;
+                }
+
                 if (version > _persistedVersion)
                 {
                     _persistedVersion = version;

@@ -117,6 +117,7 @@ public class MediaDownloaderTests
         Assert.NotNull(final.Segments);
         Assert.Equal(2, final.Segments!.Count);
         Assert.All(final.Segments, segment => Assert.Equal(100, segment.Percent));
+        Assert.True(reports[^1].IsFinalizing);
     }
 
     [Fact]

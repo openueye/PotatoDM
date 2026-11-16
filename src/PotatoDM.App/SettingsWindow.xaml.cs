@@ -47,6 +47,8 @@ public partial class SettingsWindow : Window
 
         SpeedLimitBox.Text = ((settings.MaxBytesPerSecond + 512) / 1024)
             .ToString(CultureInfo.InvariantCulture);
+        TorrentDownloadLimitBox.Text = (settings.TorrentDownloadBytesPerSecond / 1024).ToString(CultureInfo.InvariantCulture);
+        TorrentUploadLimitBox.Text = (settings.TorrentUploadBytesPerSecond / 1024).ToString(CultureInfo.InvariantCulture);
         AutomaticBox.IsChecked = settings.AutomaticConnections;
         DynamicSegmentsBox.IsChecked = settings.DynamicSegmentation;
         SparseFileBox.IsChecked = settings.SparseWorkingFile;
@@ -57,6 +59,7 @@ public partial class SettingsWindow : Window
         ProxyBox.IsChecked = settings.UseProxy;
         CloseToTrayBox.IsChecked = settings.CloseToTray;
         StartMinimizedBox.IsChecked = settings.StartMinimized;
+        NotificationsBox.IsChecked = settings.ShowNotifications;
         LaunchAtStartupBox.IsChecked = settings.LaunchAtStartup;
 
         ThemeBox.ItemsSource = new[]
@@ -88,10 +91,19 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 this,
-                "全局限速请输入 0 或正整数（KiB/s）。",
+                "HTTP / 媒体下载限速请输入 0 或正整数（KiB/s）。",
                 "土豆下载器",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!long.TryParse(TorrentDownloadLimitBox.Text.Trim(), out var torrentDownload) ||
+            !long.TryParse(TorrentUploadLimitBox.Text.Trim(), out var torrentUpload) ||
+            torrentDownload < 0 || torrentUpload < 0 ||
+            torrentDownload > long.MaxValue / 1024 || torrentUpload > long.MaxValue / 1024)
+        {
+            MessageBox.Show(this, "BT 限速请输入 0 或正整数（KiB/s）。", "土豆下载器", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -119,6 +131,8 @@ public partial class SettingsWindow : Window
             ? perJobLimit
             : AppSettings.MaxConnectionsPerJobCeiling;
         _settings.MaxBytesPerSecond = speedLimitKib * 1024;
+        _settings.TorrentDownloadBytesPerSecond = torrentDownload * 1024;
+        _settings.TorrentUploadBytesPerSecond = torrentUpload * 1024;
         _settings.DynamicSegmentation = DynamicSegmentsBox.IsChecked == true;
         _settings.SparseWorkingFile = SparseFileBox.IsChecked == true;
         _settings.DownloadFolder = downloadFolder;
@@ -128,9 +142,17 @@ public partial class SettingsWindow : Window
         _settings.UseProxy = ProxyBox.IsChecked == true;
         _settings.CloseToTray = CloseToTrayBox.IsChecked == true;
         _settings.StartMinimized = StartMinimizedBox.IsChecked == true;
+        _settings.ShowNotifications = NotificationsBox.IsChecked == true;
         _settings.LaunchAtStartup = LaunchAtStartupBox.IsChecked == true;
         _settings.Theme = ThemeBox.SelectedValue is AppTheme theme ? theme : AppTheme.System;
         DialogResult = true;
+    }
+
+    public void ShowFfmpegSettings()
+    {
+        SectionList.SelectedIndex = 1;
+        DownloadAdvanced.IsExpanded = true;
+        Loaded += (_, _) => { FfmpegPathBox.BringIntoView(); FfmpegPathBox.Focus(); };
     }
 
     private void OnBrowseFfmpeg(object sender, RoutedEventArgs e)
@@ -220,14 +242,14 @@ public partial class SettingsWindow : Window
         var ready = status.FullyInstalled;
         var partiallyInstalled = status.HostPresent && status.SourcePresent;
 
-        BrowserStatusPillText.Text = ready ? "已就绪" : partiallyInstalled ? "待注册" : "未安装";
+        BrowserStatusPillText.Text = ready ? "组件已安装" : partiallyInstalled ? "待注册" : "未安装";
         SetPill(
             BrowserStatusPill,
             BrowserStatusPillText,
             ready ? PillState.Ok : PillState.Attention);
 
         BrowserStatusText.Text = ready
-            ? "扩展已就绪，在浏览器中加载一次即可使用。"
+            ? "本机组件已安装。请在浏览器加载扩展，并在扩展中验证连接。"
             : partiallyInstalled
                 ? "宿主与扩展已复制，点击“安装 / 修复”完成注册。"
                 : "尚未安装浏览器接管。";
@@ -240,7 +262,7 @@ public partial class SettingsWindow : Window
             : "已检测到 " + string.Join(" / ", detected) + "。";
 
         BrowserStepText.Text = "安装后，在浏览器扩展页开启开发者模式，加载“扩展目录”中的文件夹。";
-        BrowserStepText.Visibility = ready ? Visibility.Collapsed : Visibility.Visible;
+        BrowserStepText.Visibility = Visibility.Visible;
 
         var elevated = IsElevated();
         BrowserWarningText.Text = "当前以管理员身份运行，浏览器扩展无法连接；请退出后以普通用户启动。";

@@ -92,6 +92,13 @@ public static partial class MediaDownloader
         await FetchKeysAsync(client, plan, requestOptions, retry, keyCache, cancellationToken)
             .ConfigureAwait(false);
 
+        DownloadProgress? lastProgress = null;
+        void ReportProgress(DownloadProgress progress)
+        {
+            lastProgress = progress;
+            onProgress?.Invoke(progress);
+        }
+
         await FetchAllPartsAsync(
                 client,
                 cached,
@@ -101,9 +108,14 @@ public static partial class MediaDownloader
                 keyCache,
                 request.BandwidthLimiter,
                 Math.Max(1, request.Connections),
-                onProgress,
+                ReportProgress,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        onProgress?.Invoke((lastProgress ?? new DownloadProgress(0, null, 0, null, 0)) with
+        {
+            BytesPerSecond = 0, Eta = null, ActiveConnections = 0, IsFinalizing = true,
+        });
 
         var target = muxed
             ? await MergeWithFfmpegAsync(

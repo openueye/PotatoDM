@@ -1,10 +1,36 @@
 using PotatoDM.AppCore.Job;
 using PotatoDM.Core.Models;
+using PotatoDM.Core.Exceptions;
 
 namespace PotatoDM.App.Tests;
 
 public class DownloadJobTests
 {
+    [Fact]
+    public void Failure_categories_give_specific_recovery_and_block_unsupported_retry()
+    {
+        Assert.Equal(JobFailureKind.Authentication, JobFailure.Classify(new HttpDownloadException("HTTP 403 (Forbidden)", false)));
+        Assert.Equal(JobFailureKind.Storage, JobFailure.Classify(new DiskSpaceException("full")));
+        Assert.Equal(JobFailureKind.MediaTool, JobFailure.Classify(new MediaMergeException("ffmpeg")));
+        Assert.Equal(JobFailureKind.UnsupportedMedia, JobFailure.Classify(new DrmProtectedException("test")));
+        var job = new DownloadJob("job", "https://example.test/file", DateTimeOffset.UtcNow);
+        job.MarkFailed("unsupported", JobFailureKind.UnsupportedMedia);
+        Assert.False(job.CanRestart);
+        Assert.Contains("不受支持", job.FailureSummary);
+    }
+
+    [Fact]
+    public void Finalizing_progress_is_not_presented_as_completed()
+    {
+        var job = new DownloadJob("job", "https://example.test/file", DateTimeOffset.UtcNow);
+        job.MarkDownloading();
+        job.ApplyProgress(new DownloadProgress(100, 100, 0, null, 0, IsFinalizing: true));
+        Assert.True(job.IsFinalizing);
+        Assert.Equal("合并中", job.StateText);
+        Assert.Equal("合并中", job.ProgressText);
+        job.MarkCompleted(100);
+        Assert.False(job.IsFinalizing);
+    }
     [Fact]
     public void ApplyProgress_exposes_each_real_download_segment_for_the_task_row()
     {

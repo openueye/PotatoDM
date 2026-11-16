@@ -2,6 +2,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using Microsoft.Win32;
 using PotatoDM.App.Services;
 using PotatoDM.AppCore.Job;
@@ -35,6 +37,9 @@ public partial class App : System.Windows.Application
     private AppSettings? _settings;
     private bool _themeEventsSubscribed;
     private bool _isExiting;
+    private readonly Dictionary<DownloadJob, DownloadJobState> _notificationJobs = new();
+    private readonly Dictionary<DownloadJob, DownloadJobState> _notificationStates = new();
+    private DispatcherTimer? _notificationTimer;
 
     public bool IsExiting => _isExiting;
     private int _handoffStopped;
@@ -112,6 +117,10 @@ public partial class App : System.Windows.Application
 
             _trayIcon.SetStatus(_window.StatusText);
             _window.StatusTextChanged += text => _trayIcon?.SetStatus(text);
+            _notificationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _notificationTimer.Tick += OnNotificationTimer;
+            foreach (var job in _manager.Jobs) SubscribeJob(job);
+            ((INotifyCollectionChanged)_manager.Jobs).CollectionChanged += OnNotificationJobsChanged;
 
             if (!settings.StartMinimized)
             {
@@ -144,6 +153,10 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _notificationTimer?.Stop();
+        if (_manager is not null)
+            ((INotifyCollectionChanged)_manager.Jobs).CollectionChanged -= OnNotificationJobsChanged;
+        foreach (var job in _notificationStates.Keys.ToArray()) job.PropertyChanged -= OnNotificationJobChanged;
         if (_themeEventsSubscribed)
         {
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
@@ -189,6 +202,49 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
+    private void SubscribeJob(DownloadJob job)
+    {
+        _notificationStates[job] = job.State;
+        job.PropertyChanged += OnNotificationJobChanged;
+    }
+
+    private void OnNotificationJobsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (DownloadJob job in e.OldItems) { job.PropertyChanged -= OnNotificationJobChanged; _notificationStates.Remove(job); }
+        if (e.NewItems is not null)
+            foreach (DownloadJob job in e.NewItems) SubscribeJob(job);
+    }
+
+    private void OnNotificationJobChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(DownloadJob.State) || sender is not DownloadJob job ||
+            !_notificationStates.TryGetValue(job, out var previous)) return;
+        _notificationStates[job] = job.State;
+        if (previous == job.State || job.State is not (DownloadJobState.Completed or DownloadJobState.Failed) ||
+            _settings?.ShowNotifications != true) return;
+        _notificationJobs[job] = job.State;
+        _notificationTimer?.Start();
+    }
+
+    private void OnNotificationTimer(object? sender, EventArgs e)
+    {
+        _notificationTimer?.Stop();
+        if (_settings?.ShowNotifications != true || _notificationJobs.Count == 0)
+        {
+            _notificationJobs.Clear();
+            return;
+        }
+        var jobs = _notificationJobs.ToArray();
+        _notificationJobs.Clear();
+        var completed = jobs.Count(item => item.Value == DownloadJobState.Completed);
+        var failed = jobs.Count(item => item.Value == DownloadJobState.Failed);
+        var message = jobs.Length == 1
+            ? $"{jobs[0].Key.DisplayName}：{(failed > 0 ? "下载失败" : "下载完成")}"
+            : $"{completed} 个任务完成，{failed} 个任务失败。";
+        _trayIcon?.Notify("土豆下载器", message, () => _window?.ShowJob(jobs.Length == 1 ? jobs[0].Key : null));
+    }
+
     /// <summary>Stops accepting browser hand-offs; called before pausing on close.</summary>
     public async Task StopBrowserHandoffAsync()
     {
@@ -220,17 +276,27 @@ public partial class App : System.Windows.Application
         _isExiting = true;
         try
         {
-            await StopBrowserHandoffAsync();
             if (_manager is not null)
             {
                 await _manager.PauseAllAsync(TimeSpan.FromSeconds(5));
+                if (_manager.RegistrySaveFailed && MessageBox.Show(
+                    "任务列表未能保存，退出后可能丢失。仍要退出吗？", "保存失败",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                {
+                    _isExiting = false;
+                    return;
+                }
             }
+            await StopBrowserHandoffAsync();
         }
         finally
         {
-            _trayIcon?.Dispose();
-            _trayIcon = null;
-            Shutdown(0);
+            if (_isExiting)
+            {
+                _trayIcon?.Dispose();
+                _trayIcon = null;
+                Shutdown(0);
+            }
         }
     }
 

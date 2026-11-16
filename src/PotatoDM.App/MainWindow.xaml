@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:PotatoDM.App.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="土豆下载器" Icon="Assets/PotatoDM.ico" Height="760" Width="1180"
-        MinHeight="600" MinWidth="1100" WindowStartupLocation="CenterScreen"
+        MinHeight="600" MinWidth="850" WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Closing="OnWindowClosing" PreviewKeyDown="OnPreviewKeyDown"
         StateChanged="OnWindowStateChanged"
@@ -51,6 +51,10 @@
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4" />
                             </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -71,6 +75,10 @@
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="#C50F1F" />
                                 <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -112,6 +120,10 @@
                                 <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource BrandBrush}" />
                                 <Setter Property="Foreground" Value="{DynamicResource BrandOnBrush}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -180,7 +192,7 @@
             Background="{DynamicResource PageBrush}">
         <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="56"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="216"/><ColumnDefinition Width="*"/>
@@ -365,7 +377,7 @@
                                 <Separator/>
                                 <MenuItem Header="暂停(_P)" Command="{Binding PauseCommand}"/>
                                 <MenuItem Header="继续(_R)" Command="{Binding ResumeCommand}"/>
-                                <MenuItem Header="重新开始(_S)" Command="{Binding RestartCommand}"/>
+                                <MenuItem Header="{Binding SelectedJob.RestartLabel, TargetNullValue=重新开始}" Command="{Binding RestartCommand}"/>
                                 <Separator/>
                                 <MenuItem Header="移除(_D)" Command="{Binding RemoveCommand}"/>
                             </ContextMenu>
@@ -404,6 +416,10 @@
                                                 <Trigger Property="IsSelected" Value="True">
                                                     <Setter TargetName="RowChrome" Property="Background" Value="{DynamicResource SelectionBrush}"/>
                                                 </Trigger>
+                                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                                    <Setter TargetName="RowChrome" Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
+                                                    <Setter TargetName="RowChrome" Property="BorderThickness" Value="2"/>
+                                                </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Setter.Value>
@@ -427,57 +443,37 @@
                             </Style>
                         </DataGrid.CellStyle>
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="文件" Width="*" MinWidth="240" SortMemberPath="DisplayName">
+                            <DataGridTemplateColumn Header="文件" Width="*" MinWidth="180" SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                     <StackPanel Margin="10,5" ToolTip="{Binding TargetPath}">
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Text="{Binding TransferredText}" Foreground="{DynamicResource MutedBrush}"
-                                                   FontSize="10.5" Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding Error}" Style="{StaticResource InlineError}" ToolTip="{Binding Error}"/>
+                                                   FontSize="12" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding FailureSummary}" Style="{StaticResource InlineError}" ToolTip="{Binding Error}"/>
                                     </StackPanel>
                                 </DataTemplate></DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="进度" Width="230" SortMemberPath="PercentValue">
+                            <DataGridTemplateColumn Header="进度" Width="150" SortMemberPath="PercentValue">
                                 <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                     <StackPanel Margin="10,0" VerticalAlignment="Center">
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding SegmentSummary}" Foreground="{DynamicResource MutedBrush}" FontSize="10"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding ProgressText}" Foreground="{DynamicResource MutedBrush}" FontSize="10.5"/>
+                                            <TextBlock Text="{Binding SizeText}" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding ProgressText}" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
                                         </Grid>
                                         <ProgressBar Value="{Binding PercentValue, Mode=OneWay}" Maximum="100" Height="6" Margin="0,3,0,0"
+                                                     IsIndeterminate="{Binding IsFinalizing}"
                                                      Foreground="{DynamicResource BrandBrush}"
                                                      Background="{DynamicResource ProgressTrackBrush}"
                                                      BorderThickness="0"
                                                      AutomationProperties.Name="{Binding DisplayName, StringFormat=下载进度 {0}}"/>
-                                        <controls:SegmentBar Height="6" Margin="0,5,0,0"
-                                                     Segments="{Binding SegmentProgresses}"
-                                                     TrackBrush="{DynamicResource ProgressTrackBrush}"
-                                                     FillBrush="{DynamicResource BrandDarkBrush}"
-                                                     ToolTip="{Binding SegmentSummary}"
-                                                     AutomationProperties.Name="{Binding SegmentSummary}">
-                                            <controls:SegmentBar.Style>
-                                                <Style TargetType="controls:SegmentBar">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding HasSegmentProgress}" Value="True">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </controls:SegmentBar.Style>
-                                        </controls:SegmentBar>
                                     </StackPanel>
                                 </DataTemplate></DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="大小" Binding="{Binding SizeText}" Width="80"
-                                                SortMemberPath="TotalBytes" ElementStyle="{StaticResource CellText}"/>
                             <DataGridTextColumn Header="速度" Binding="{Binding SpeedText}" Width="92"
                                                 SortMemberPath="BytesPerSecond" ElementStyle="{StaticResource CellText}"/>
-                            <DataGridTextColumn Header="剩余" Binding="{Binding EtaText}" Width="82"
-                                                SortMemberPath="Eta" ElementStyle="{StaticResource CellText}"/>
-                            <DataGridTemplateColumn Header="状态" Width="88" SortMemberPath="StateText">
+                            <DataGridTemplateColumn Header="状态" Width="112" SortMemberPath="StateText">
                                 <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                     <Border Style="{StaticResource StatePill}">
                                         <TextBlock Text="{Binding StateText}"
@@ -508,6 +504,11 @@
         </Grid>
 
         <!-- Status bar -->
+        <Button x:Name="RegistryWarning" Grid.Row="3" Grid.ColumnSpan="2" Visibility="Collapsed"
+                Content="任务列表未保存，重启后可能丢失。点击重试保存" Click="OnRetryRegistrySave"
+                Foreground="{DynamicResource StateErrorForegroundBrush}" Padding="8"/>
+        <Button x:Name="BatchProbeButton" Grid.Row="4" Grid.ColumnSpan="2" Visibility="Collapsed"
+                Click="OnCancelBatchProbe" Padding="8"/>
         <Border x:Name="StatusBar" Grid.Row="2" Grid.ColumnSpan="2" Height="36"
                 Background="{DynamicResource Surface2Brush}"
                 BorderBrush="{DynamicResource SeparatorBrush}"

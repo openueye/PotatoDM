@@ -27,8 +27,12 @@ public sealed class AppSettings
     /// <summary>Number of jobs that may transfer at the same time; the rest queue.</summary>
     public int MaxConcurrentJobs { get; set; } = 3;
 
-    /// <summary>Process-wide download cap in bytes per second; zero means unlimited.</summary>
+    /// <summary>Shared HTTP and media download cap in bytes per second; zero means unlimited.</summary>
     public long MaxBytesPerSecond { get; set; }
+
+    public long TorrentDownloadBytesPerSecond { get; set; }
+
+    public long TorrentUploadBytesPerSecond { get; set; }
 
     /// <summary>Let connections that finish early split the slowest range.</summary>
     public bool DynamicSegmentation { get; set; }
@@ -48,6 +52,8 @@ public sealed class AppSettings
 
     public bool StartMinimized { get; set; }
 
+    public bool ShowNotifications { get; set; } = true;
+
     public bool LaunchAtStartup { get; set; }
 
     /// <summary>Light, dark, or follow Windows.</summary>
@@ -61,6 +67,8 @@ public sealed class AppSettings
         MaxConnectionsPerJob = MaxConnectionsPerJob,
         MaxConcurrentJobs = MaxConcurrentJobs,
         MaxBytesPerSecond = MaxBytesPerSecond,
+        TorrentDownloadBytesPerSecond = TorrentDownloadBytesPerSecond,
+        TorrentUploadBytesPerSecond = TorrentUploadBytesPerSecond,
         DynamicSegmentation = DynamicSegmentation,
         SparseWorkingFile = SparseWorkingFile,
         FfmpegPath = FfmpegPath,
@@ -68,6 +76,7 @@ public sealed class AppSettings
         UseProxy = UseProxy,
         CloseToTray = CloseToTray,
         StartMinimized = StartMinimized,
+        ShowNotifications = ShowNotifications,
         LaunchAtStartup = LaunchAtStartup,
         Theme = Theme,
     };
@@ -79,6 +88,8 @@ public sealed class AppSettings
         MaxConnectionsPerJob = Math.Clamp(MaxConnectionsPerJob, 1, MaxConnectionsPerJobCeiling);
         MaxConcurrentJobs = Math.Clamp(MaxConcurrentJobs, 1, 32);
         MaxBytesPerSecond = Math.Max(0, MaxBytesPerSecond);
+        TorrentDownloadBytesPerSecond = Math.Max(0, TorrentDownloadBytesPerSecond);
+        TorrentUploadBytesPerSecond = Math.Max(0, TorrentUploadBytesPerSecond);
         DownloadFolder = string.IsNullOrWhiteSpace(DownloadFolder) ? null : DownloadFolder.Trim();
 
         if (!Enum.IsDefined(typeof(AppTheme), Theme))

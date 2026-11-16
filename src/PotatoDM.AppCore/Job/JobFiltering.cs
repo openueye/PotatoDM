@@ -35,7 +35,7 @@ public static class JobFiltering
         filter switch
         {
             JobFilter.Downloading => state is
-                DownloadJobState.Probing or DownloadJobState.Queued or DownloadJobState.Downloading,
+                DownloadJobState.Probing or DownloadJobState.Queued or DownloadJobState.Downloading or DownloadJobState.Paused,
             JobFilter.Completed => state == DownloadJobState.Completed,
             JobFilter.Failed => state == DownloadJobState.Failed,
             _ => true,
